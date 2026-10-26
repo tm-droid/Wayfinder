@@ -8,11 +8,12 @@ import WebKit
 
 struct BrowserWindow: View {
     @State private var model = BrowserWindowModel()
+    @AppStorage("sidebarWidth") private var sidebarWidth = 260.0
 
     var body: some View {
         NavigationSplitView {
             TabSidebar(model: model)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 230, max: 360)
+                .navigationSplitViewColumnWidth(min: 200, ideal: sidebarWidth, max: 500)
         } detail: {
             BrowserDetail(model: model)
         }

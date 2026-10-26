@@ -264,3 +264,131 @@ final class SpaceModelTests: XCTestCase {
         XCTAssertNotNil(store.record(tab.id))
     }
 }
+
+final class SidebarModelTests: XCTestCase {
+    private var directory: URL!
+    private var defaults: UserDefaults!
+    private var suiteName: String!
+
+    override func setUp() {
+        super.setUp()
+        directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = UUID().uuidString
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    private func makeStore() -> SpaceStore {
+        SpaceStore(file: JSONFile(url: directory.appending(path: "Spaces.json")), defaults: defaults)
+    }
+
+    private func add(_ store: SpaceStore, _ spaceID: Space.ID, _ url: String) -> TabRecord.ID {
+        let record = TabRecord(spaceID: spaceID, url: URL(string: url), kind: .today)
+        store.addRecord(record)
+        return record.id
+    }
+
+    func testPlaceChangesKindAndFolder() {
+        let store = makeStore()
+        let space = store.spaces[0].id
+        let a = add(store, space, "https://a.com")
+        let folder = store.addFolder(name: "F", in: space)
+        XCTAssertTrue(store.place(a, kind: .pinned, folderID: folder.id))
+        XCTAssertEqual(store.record(a)?.kind, .pinned)
+        XCTAssertEqual(store.record(a)?.folderID, folder.id)
+        XCTAssertEqual(store.record(a)?.savedURL, URL(string: "https://a.com"))
+        XCTAssertTrue(store.place(a, kind: .essential))
+        XCTAssertNil(store.record(a)?.folderID)
+        XCTAssertTrue(store.place(a, kind: .pinned))
+        XCTAssertEqual(store.record(a)?.kind, .pinned)
+        XCTAssertTrue(store.place(a, kind: .today))
+        XCTAssertEqual(store.record(a)?.kind, .today)
+        XCTAssertNil(store.record(a)?.savedURL)
+    }
+
+    func testPlaceOrdersBeforeAnchor() {
+        let store = makeStore()
+        let space = store.spaces[0].id
+        let a = add(store, space, "https://a.com")
+        let b = add(store, space, "https://b.com")
+        let c = add(store, space, "https://c.com")
+        XCTAssertTrue(store.place(c, kind: .today, before: a))
+        XCTAssertEqual(store.records(in: space, kind: .today).map(\.id), [c, a, b])
+        XCTAssertTrue(store.place(c, kind: .today))
+        XCTAssertEqual(store.records(in: space, kind: .today).map(\.id), [a, b, c])
+    }
+
+    func testPlaceRespectsEssentialsCapAndFolderSpace() {
+        let store = makeStore()
+        let space = store.spaces[0].id
+        for i in 0..<SpaceStore.essentialsLimit {
+            XCTAssertTrue(store.place(add(store, space, "https://e\(i).com"), kind: .essential))
+        }
+        let extra = add(store, space, "https://x.com")
+        XCTAssertFalse(store.place(extra, kind: .essential))
+        XCTAssertEqual(store.record(extra)?.kind, .today)
+        let other = store.addSpace(name: "Other")
+        let foreign = store.addFolder(name: "F", in: other.id)
+        XCTAssertFalse(store.place(extra, kind: .pinned, folderID: foreign.id))
+        XCTAssertEqual(store.record(extra)?.kind, .today)
+    }
+
+    func testUpdateSpace() {
+        let store = makeStore()
+        let id = store.spaces[0].id
+        store.updateSpace(id, name: "Home", icon: "🏠", color: .green)
+        XCTAssertEqual(store.space(id)?.name, "Home")
+        XCTAssertEqual(store.space(id)?.icon, "🏠")
+        XCTAssertEqual(store.space(id)?.color, .green)
+    }
+
+    func testSpaceSwitchingWrapsAndSelectsByNumber() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let first = model.selectedSpaceID
+        let second = model.addSpace(name: "B").id
+        let third = model.addSpace(name: "C").id
+        model.selectAdjacentSpace(offset: 1)
+        XCTAssertEqual(model.selectedSpaceID, first)
+        model.selectAdjacentSpace(offset: -1)
+        XCTAssertEqual(model.selectedSpaceID, third)
+        model.selectSpace(number: 2)
+        XCTAssertEqual(model.selectedSpaceID, second)
+        model.selectSpace(number: 9)
+        XCTAssertEqual(model.selectedSpaceID, second)
+    }
+
+    func testClearTodayKeepsPinnedAndLeavesATab() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let pinned = model.newTab()
+        model.pin(pinned)
+        model.newTab()
+        model.newTab()
+        model.clearTodayTabs()
+        XCTAssertTrue(model.tabs.contains { $0.id == pinned.id })
+        XCTAssertEqual(model.todayTabs.count, 0)
+        model.pin(pinned)
+        model.unpin(pinned)
+        model.clearTodayTabs()
+        XCTAssertEqual(model.tabs.count, 1)
+    }
+
+    func testMoveToSpace() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let home = model.selectedSpaceID
+        let work = store.addSpace(name: "Work").id
+        let tab = model.newTab()
+        model.moveToSpace(tab, work)
+        XCTAssertNil(store.record(tab.id))
+        XCTAssertEqual(store.records(in: work, kind: .today).count, 1)
+        XCTAssertEqual(model.selectedSpaceID, home)
+    }
+}

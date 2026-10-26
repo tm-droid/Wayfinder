@@ -128,6 +128,23 @@ struct BrowserCommands: Commands {
             }
         }
 
+        CommandMenu("Spaces") {
+            Button("Next Space") { model?.selectAdjacentSpace(offset: 1) }
+                .keyboardShortcut(.rightArrow, modifiers: [.control, .command])
+                .disabled((model?.store.spaces.count ?? 0) < 2)
+            Button("Previous Space") { model?.selectAdjacentSpace(offset: -1) }
+                .keyboardShortcut(.leftArrow, modifiers: [.control, .command])
+                .disabled((model?.store.spaces.count ?? 0) < 2)
+
+            Divider()
+
+            ForEach(1...9, id: \.self) { number in
+                Button("Space \(number)") { model?.selectSpace(number: number) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .control)
+                    .disabled(number > (model?.store.spaces.count ?? 0))
+            }
+        }
+
         CommandGroup(before: .windowList) {
             Button("Show Previous Tab") { model?.selectAdjacentTab(offset: -1) }
                 .keyboardShortcut("[", modifiers: [.command, .shift])

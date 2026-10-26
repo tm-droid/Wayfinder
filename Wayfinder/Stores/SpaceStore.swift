@@ -160,6 +160,14 @@ final class SpaceStore {
         scheduleSave()
     }
 
+    func updateSpace(_ id: Space.ID, name: String, icon: String, color: SpaceColor) {
+        guard let index = spaces.firstIndex(where: { $0.id == id }) else { return }
+        spaces[index].name = name
+        spaces[index].icon = icon
+        spaces[index].color = color
+        scheduleSave()
+    }
+
     func moveSpaces(fromOffsets source: IndexSet, toOffset destination: Int) {
         spaces.move(fromOffsets: source, toOffset: destination)
         scheduleSave()
@@ -291,6 +299,33 @@ final class SpaceStore {
             if record.kind != .pinned { pin(id) }
         }
         mutate(id) { $0.folderID = folderID }
+        return true
+    }
+
+    /// Moves a tab into a section (and folder, for pinned), before `anchor` or at the end.
+    /// Returns false when the move is not allowed: essentials cap reached, unknown folder, or an anchor from another space.
+    @discardableResult
+    func place(_ id: TabRecord.ID, kind: TabRecord.Kind, folderID: Folder.ID? = nil, before anchor: TabRecord.ID? = nil) -> Bool {
+        guard let record = record(id) else { return false }
+        if let anchor, anchor != id, self.record(anchor)?.spaceID != record.spaceID { return false }
+        switch kind {
+        case .today:
+            if record.kind != .today { unpin(id) }
+        case .essential:
+            guard makeEssential(id) else { return false }
+        case .pinned:
+            if let folderID, !folders.contains(where: { $0.id == folderID && $0.spaceID == record.spaceID }) { return false }
+            if record.kind != .pinned { pin(id) }
+            mutate(id) { $0.folderID = folderID }
+        }
+        guard let moved = records.firstIndex(where: { $0.id == id }) else { return true }
+        let item = records.remove(at: moved)
+        if let anchor, anchor != id, let target = records.firstIndex(where: { $0.id == anchor }) {
+            records.insert(item, at: target)
+        } else {
+            records.append(item)
+        }
+        scheduleSave()
         return true
     }
 

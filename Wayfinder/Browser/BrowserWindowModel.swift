@@ -219,6 +219,29 @@ final class BrowserWindowModel {
         if let selectedTab { close(selectedTab) }
     }
 
+    /// Closes every today tab of the current space (Arc's "Clear").
+    func clearTodayTabs() {
+        let doomed = todayTabs
+        guard !doomed.isEmpty else { return }
+        // Keep the window usable: a space with nothing open gets a fresh tab.
+        if doomed.count == tabs.count { newTab() }
+        doomed.forEach(close)
+    }
+
+    /// Reopens the page as a today tab in another space and closes it here.
+    func moveToSpace(_ tab: BrowserTab, _ spaceID: Space.ID) {
+        guard store.record(tab.id)?.spaceID != spaceID, store.space(spaceID) != nil else { return }
+        newTab(url: tab.url, in: spaceID, select: false, after: nil)
+        close(tab)
+    }
+
+    /// Moves a tab to a section and position; see `SpaceStore.place`.
+    @discardableResult
+    func place(_ id: TabRecord.ID, kind: TabRecord.Kind, folderID: Folder.ID? = nil, before anchor: TabRecord.ID? = nil) -> Bool {
+        if let tab = loadedTabs.first(where: { $0.id == id }) { sync(tab) }
+        return store.place(id, kind: kind, folderID: folderID, before: anchor)
+    }
+
     func closeOtherTabs(except tab: BrowserTab) {
         for other in todayTabs where other.id != tab.id {
             close(other)
@@ -281,6 +304,19 @@ final class BrowserWindowModel {
             selectedTabID = nil
             newTab()
         }
+    }
+
+    /// ⌃1 to ⌃9 pick a space by position.
+    func selectSpace(number: Int) {
+        guard store.spaces.indices.contains(number - 1) else { return }
+        selectSpace(store.spaces[number - 1].id)
+    }
+
+    /// Wraps around at both ends.
+    func selectAdjacentSpace(offset: Int) {
+        let spaces = store.spaces
+        guard spaces.count > 1, let current = spaces.firstIndex(where: { $0.id == selectedSpaceID }) else { return }
+        selectSpace(spaces[(current + offset + spaces.count) % spaces.count].id)
     }
 
     @discardableResult
