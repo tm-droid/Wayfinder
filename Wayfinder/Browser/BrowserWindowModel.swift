@@ -18,8 +18,19 @@ final class BrowserWindowModel {
     @ObservationIgnored static var pendingURLs: [URL] = []
     @ObservationIgnored private(set) static weak var lastActive: BrowserWindowModel?
 
-    private(set) var tabs: [BrowserTab] = []
-    var selectedTabID: BrowserTab.ID?
+    @ObservationIgnored let store: SpaceStore
+    /// Every open web view in this window, across all spaces.
+    private var loadedTabs: [BrowserTab] = []
+    private(set) var selectedSpaceID: Space.ID
+    var selectedTabID: BrowserTab.ID? {
+        didSet {
+            guard let selectedTabID, let record = store.record(selectedTabID) else { return }
+            lastSelectedTabIDs[record.spaceID] = selectedTabID
+            store.touch(selectedTabID)
+        }
+    }
+    /// The tab to bring back when returning to a space.
+    @ObservationIgnored private var lastSelectedTabIDs: [Space.ID: BrowserTab.ID] = [:]
 
     let address = AddressFieldState()
     var isFindBarVisible = false
@@ -48,16 +59,20 @@ final class BrowserWindowModel {
 
     @ObservationIgnored private var keyObserver: (any NSObjectProtocol)?
 
-    init() {
+    init(store: SpaceStore = .shared, restoresSession: Bool = true) {
+        self.store = store
+        selectedSpaceID = store.spaces[0].id
         Self.liveWindows.add(self)
         Self.lastActive = self
 
-        var urls = Self.pendingURLs
+        let urls = Self.pendingURLs
         Self.pendingURLs = []
-        if !Self.didRestoreSession {
+        if restoresSession, !Self.didRestoreSession {
             Self.didRestoreSession = true
-            if Preferences.restoresTabs {
-                urls = Self.savedSessionURLs() + urls
+            store.discardTodayRecords(keepingRestorable: Preferences.restoresTabs)
+            for record in store.records where record.kind == .today {
+                load(record, select: false)
+                lastSelectedTabIDs[record.spaceID] = record.id
             }
         }
 
@@ -67,12 +82,37 @@ final class BrowserWindowModel {
         if tabs.isEmpty {
             newTab()
         } else {
-            selectedTabID = tabs.last?.id
+            selectedTabID = lastSelectedTabIDs[selectedSpaceID] ?? tabs.last?.id
         }
     }
 
+    var currentSpace: Space {
+        store.space(selectedSpaceID) ?? store.spaces[0]
+    }
+
+    /// Open tabs of the current space: essentials, then pinned, then today.
+    var tabs: [BrowserTab] {
+        let loaded = Dictionary(loadedTabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return store.records(in: selectedSpaceID).compactMap { loaded[$0.id] }
+    }
+
+    var todayTabs: [BrowserTab] {
+        let today = Set(store.records(in: selectedSpaceID, kind: .today).map(\.id))
+        return tabs.filter { today.contains($0.id) }
+    }
+
+    /// What the tab strip shows: every essential and pinned tab (loaded or not), plus open today tabs.
+    var visibleRecords: [TabRecord] {
+        let loaded = Set(loadedTabs.map(\.id))
+        return store.records(in: selectedSpaceID).filter { $0.kind != .today || loaded.contains($0.id) }
+    }
+
+    func tab(for record: TabRecord) -> BrowserTab? {
+        loadedTabs.first { $0.id == record.id }
+    }
+
     var selectedTab: BrowserTab? {
-        tabs.first { $0.id == selectedTabID }
+        loadedTabs.first { $0.id == selectedTabID }
     }
 
     static var frontmost: BrowserWindowModel? {
@@ -83,8 +123,9 @@ final class BrowserWindowModel {
 
     @discardableResult
     func newTab(url: URL? = nil, select: Bool = true, after anchor: BrowserTab? = nil) -> BrowserTab {
-        let tab = BrowserTab()
-        insert(tab, after: anchor, select: select)
+        let record = TabRecord(spaceID: selectedSpaceID, kind: .today)
+        let tab = BrowserTab(id: record.id, dataStore: currentSpace.dataStore)
+        insert(tab, record: record, after: anchor, select: select)
         if let url = url ?? Preferences.homepage {
             tab.load(url)
         } else if select {
@@ -99,8 +140,9 @@ final class BrowserWindowModel {
 
     /// A tab for `window.open` or `target=_blank`. WebKit loads it after we return the web view.
     func openPopup(configuration: WKWebViewConfiguration, after anchor: BrowserTab) -> BrowserTab {
-        let tab = BrowserTab(configuration: configuration)
-        insert(tab, after: anchor, select: true)
+        let record = TabRecord(spaceID: store.record(anchor.id)?.spaceID ?? selectedSpaceID, kind: .today)
+        let tab = BrowserTab(id: record.id, configuration: configuration)
+        insert(tab, record: record, after: anchor, select: true)
         return tab
     }
 
@@ -110,17 +152,28 @@ final class BrowserWindowModel {
 
     func close(_ tab: BrowserTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        if let url = tab.url {
-            ClosedTabs.shared.push(url)
+        // Closing a pinned or essential tab unloads it but keeps the record, reset to its home URL.
+        if store.record(tab.id)?.kind == .today {
+            if let url = tab.url {
+                ClosedTabs.shared.push(url)
+            }
+            store.removeRecord(tab.id)
+        } else {
+            store.resetToSavedURL(tab.id)
         }
         tab.tearDown()
-        tabs.remove(at: index)
+        loadedTabs.removeAll { $0.id == tab.id }
 
-        if tabs.isEmpty {
+        let remaining = tabs
+        if remaining.isEmpty {
             selectedTabID = nil
-            window?.performClose(nil)
+            if loadedTabs.isEmpty {
+                window?.performClose(nil)
+            } else {
+                newTab()
+            }
         } else if selectedTabID == tab.id {
-            selectedTabID = tabs[min(index, tabs.count - 1)].id
+            selectedTabID = remaining[min(index, remaining.count - 1)].id
         }
         saveSession()
     }
@@ -130,7 +183,7 @@ final class BrowserWindowModel {
     }
 
     func closeOtherTabs(except tab: BrowserTab) {
-        for other in tabs where other.id != tab.id {
+        for other in todayTabs where other.id != tab.id {
             close(other)
         }
     }
@@ -144,22 +197,89 @@ final class BrowserWindowModel {
         selectedTabID = tab.id
     }
 
+    /// Selects a tab, loading it first if it is an unloaded pinned or essential tab.
+    func activate(_ record: TabRecord) {
+        if let tab = tab(for: record) {
+            select(tab)
+        } else {
+            load(record, select: true)
+        }
+    }
+
     /// ⌘1 to ⌘8 pick a tab by position. ⌘9 picks the last tab, as in Safari.
     func selectTab(number: Int) {
-        guard !tabs.isEmpty else { return }
-        let index = number == 9 ? tabs.count - 1 : number - 1
-        if tabs.indices.contains(index) { selectedTabID = tabs[index].id }
+        let records = visibleRecords
+        guard !records.isEmpty else { return }
+        let index = number == 9 ? records.count - 1 : number - 1
+        if records.indices.contains(index) { activate(records[index]) }
     }
 
     func selectAdjacentTab(offset: Int) {
-        guard let current = tabs.firstIndex(where: { $0.id == selectedTabID }), !tabs.isEmpty else { return }
-        let index = (current + offset + tabs.count) % tabs.count
-        selectedTabID = tabs[index].id
+        let records = visibleRecords
+        guard let current = records.firstIndex(where: { $0.id == selectedTabID }) else { return }
+        activate(records[(current + offset + records.count) % records.count])
     }
 
+    /// Reorders today tabs; offsets are positions in `todayTabs`.
     func moveTabs(fromOffsets source: IndexSet, toOffset destination: Int) {
-        tabs.move(fromOffsets: source, toOffset: destination)
-        saveSession()
+        store.moveRecords(todayTabs.map(\.id), fromOffsets: source, toOffset: destination)
+    }
+
+    // MARK: Spaces
+
+    /// Switches space and brings back the tab that was selected there last.
+    func selectSpace(_ id: Space.ID) {
+        guard id != selectedSpaceID, store.space(id) != nil else { return }
+        selectedSpaceID = id
+        if let remembered = lastSelectedTabIDs[id], tabs.contains(where: { $0.id == remembered }) {
+            selectedTabID = remembered
+        } else if let first = tabs.first {
+            selectedTabID = first.id
+        } else {
+            selectedTabID = nil
+            newTab()
+        }
+    }
+
+    @discardableResult
+    func addSpace(name: String, icon: String = "square.grid.2x2", color: SpaceColor = .blue) -> Space {
+        let space = store.addSpace(name: name, icon: icon, color: color)
+        selectSpace(space.id)
+        return space
+    }
+
+    /// Removes a space, its tabs and its stored website data. The last space cannot be removed.
+    func removeSpace(_ id: Space.ID) {
+        guard let space = store.space(id), store.spaces.count > 1 else { return }
+        let doomed = loadedTabs.filter { store.record($0.id)?.spaceID == id }
+        doomed.forEach { $0.tearDown() }
+        loadedTabs.removeAll { tab in doomed.contains { $0.id == tab.id } }
+        lastSelectedTabIDs[id] = nil
+        if selectedSpaceID == id, let next = store.spaces.first(where: { $0.id != id }) {
+            selectSpace(next.id)
+        }
+        store.removeSpace(id)
+        if !space.usesDefaultDataStore {
+            Task { try? await WKWebsiteDataStore.remove(forIdentifier: space.dataStoreID) }
+        }
+    }
+
+    // MARK: Pinning
+
+    func pin(_ tab: BrowserTab) {
+        sync(tab)
+        store.pin(tab.id)
+    }
+
+    /// Returns false when the space already has the maximum number of essentials.
+    @discardableResult
+    func makeEssential(_ tab: BrowserTab) -> Bool {
+        sync(tab)
+        return store.makeEssential(tab.id)
+    }
+
+    func unpin(_ tab: BrowserTab) {
+        store.unpin(tab.id)
     }
 
     // MARK: Navigation
@@ -236,31 +356,47 @@ final class BrowserWindowModel {
 
     func saveSession() {
         let windows: [BrowserWindowModel] = Self.liveWindows.allObjects
-        let urls: [URL] = windows.flatMap { window in window.tabs.compactMap { $0.url } }
-        let strings = urls.filter { $0.scheme == "http" || $0.scheme == "https" }.map(\.absoluteString)
-        UserDefaults.standard.set(strings, forKey: PreferenceKey.savedTabs)
-    }
-
-    private static func savedSessionURLs() -> [URL] {
-        let strings = UserDefaults.standard.stringArray(forKey: PreferenceKey.savedTabs) ?? []
-        return strings.compactMap(URL.init(string:))
+        for window in windows {
+            window.loadedTabs.forEach(window.sync)
+        }
     }
 
     // MARK: Private
 
-    private func insert(_ tab: BrowserTab, after anchor: BrowserTab?, select: Bool) {
+    private func sync(_ tab: BrowserTab) {
+        store.update(tab.id, url: tab.url, title: tab.title)
+    }
+
+    /// Creates the web view for a stored record.
+    @discardableResult
+    private func load(_ record: TabRecord, select: Bool) -> BrowserTab {
+        let tab = BrowserTab(id: record.id, dataStore: store.space(record.spaceID)?.dataStore ?? .default())
         tab.owner = self
-        if let anchor, let index = tabs.firstIndex(where: { $0.id == anchor.id }) {
+        loadedTabs.append(tab)
+        if let state = record.interactionState {
+            tab.webView.interactionState = state
+        } else if let url = record.url ?? record.savedURL {
+            tab.load(url)
+        }
+        if select { selectedTabID = tab.id }
+        return tab
+    }
+
+    private func insert(_ tab: BrowserTab, record: TabRecord, after anchor: BrowserTab?, select: Bool) {
+        tab.owner = self
+        let visible = tabs
+        if let anchor, let index = visible.firstIndex(where: { $0.id == anchor.id }) {
             // Keep a run of tabs opened from the same page in order, like Safari.
             var insertionIndex = index + 1
-            while insertionIndex < tabs.count, tabs[insertionIndex].openerID == anchor.id {
+            while insertionIndex < visible.count, visible[insertionIndex].openerID == anchor.id {
                 insertionIndex += 1
             }
             tab.openerID = anchor.id
-            tabs.insert(tab, at: insertionIndex)
+            store.addRecord(record, after: visible[insertionIndex - 1].id)
         } else {
-            tabs.append(tab)
+            store.addRecord(record)
         }
+        loadedTabs.append(tab)
         if select || selectedTabID == nil {
             selectedTabID = tab.id
         }

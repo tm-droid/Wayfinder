@@ -14,8 +14,44 @@ struct TabSidebar: View {
 
     var body: some View {
         List(selection: $model.selectedTabID) {
+            if model.store.spaces.count > 1 {
+                Picker("Space", selection: Binding(get: { model.selectedSpaceID }, set: model.selectSpace)) {
+                    ForEach(model.store.spaces) { Text($0.name).tag($0.id) }
+                }
+                .labelsHidden()
+            }
+
+            ForEach([TabRecord.Kind.essential, .pinned], id: \.self) { kind in
+                let records = model.visibleRecords.filter { $0.kind == kind }
+                if !records.isEmpty {
+                    Section(kind == .essential ? "Essentials" : "Pinned") {
+                        ForEach(records) { record in
+                            if let tab = model.tab(for: record) {
+                                TabRow(tab: tab, isSelected: tab.id == model.selectedTabID) {
+                                    model.close(tab)
+                                }
+                                .tag(tab.id)
+                                .contextMenu { tabMenu(for: tab) }
+                            } else {
+                                // Unloaded: no web view until the user opens it.
+                                Button {
+                                    model.activate(record)
+                                } label: {
+                                    Label(record.title.isEmpty ? (record.savedURL.map(AddressInput.displayString(for:)) ?? "Tab") : record.title,
+                                          systemImage: "pin")
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
+                }
+            }
+
             Section {
-                ForEach(model.tabs) { tab in
+                ForEach(model.todayTabs) { tab in
                     TabRow(tab: tab, isSelected: tab.id == model.selectedTabID) {
                         model.close(tab)
                     }
@@ -74,6 +110,12 @@ struct TabSidebar: View {
     private func tabMenu(for tab: BrowserTab) -> some View {
         Button("Reload") { tab.reload() }
         Button("Duplicate") { model.duplicate(tab) }
+        if model.store.record(tab.id)?.kind == .today {
+            Button("Pin Tab") { model.pin(tab) }
+            Button("Add to Essentials") { model.makeEssential(tab) }
+        } else {
+            Button("Unpin Tab") { model.unpin(tab) }
+        }
         if let url = tab.url {
             Button("Copy Link") { copy(url) }
             Button(bookmarks.contains(url) ? "Remove Bookmark" : "Add Bookmark") {

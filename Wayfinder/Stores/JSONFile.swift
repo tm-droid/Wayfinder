@@ -18,6 +18,10 @@ struct JSONFile<Value: Codable> {
         url = directory.appending(path: name)
     }
 
+    init(url: URL) {
+        self.url = url
+    }
+
     func load() -> Value? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         do {

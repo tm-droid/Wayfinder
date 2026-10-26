@@ -18,7 +18,7 @@ final class BrowserTab: NSObject, Identifiable {
 
     static let zoomLevels: [Double] = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
 
-    let id = UUID()
+    let id: UUID
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored weak var owner: BrowserWindowModel?
     /// The tab this one was opened from, used to place new tabs next to their opener.
@@ -39,9 +39,11 @@ final class BrowserTab: NSObject, Identifiable {
     @ObservationIgnored private var isAwaitingOpenerLoad: Bool
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
 
-    init(configuration: WKWebViewConfiguration? = nil) {
+    /// `id` matches the tab's `TabRecord`. Popups pass the configuration WebKit gave them, which keeps the opener's data store.
+    init(id: UUID = UUID(), configuration: WKWebViewConfiguration? = nil, dataStore: WKWebsiteDataStore = .default()) {
+        self.id = id
         isAwaitingOpenerLoad = configuration != nil
-        webView = WKWebView(frame: .zero, configuration: configuration ?? Self.makeConfiguration())
+        webView = WKWebView(frame: .zero, configuration: configuration ?? Self.makeConfiguration(dataStore: dataStore))
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.isInspectable = true
@@ -172,9 +174,9 @@ final class BrowserTab: NSObject, Identifiable {
 
     // MARK: Private
 
-    private static func makeConfiguration() -> WKWebViewConfiguration {
+    private static func makeConfiguration(dataStore: WKWebsiteDataStore) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = dataStore
         // Sites serve their best experience to Safari-compatible user agents.
         configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
         configuration.preferences.isElementFullscreenEnabled = true
