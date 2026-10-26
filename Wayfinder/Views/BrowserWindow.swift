@@ -40,7 +40,7 @@ private struct BrowserDetail: View {
                     StartPage(model: model)
                 }
             } else {
-                Color(nsColor: .windowBackgroundColor)
+                StartPage(model: model)
             }
         }
         .overlay(alignment: .top) {

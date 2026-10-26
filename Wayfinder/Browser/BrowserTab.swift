@@ -371,7 +371,7 @@ extension BrowserTab: WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        owner?.openPopup(configuration: configuration, after: self).webView
+        owner?.openPopup(configuration: configuration, after: self)?.webView
     }
 
     func webViewDidClose(_ webView: WKWebView) {

@@ -5,6 +5,7 @@
 
 import AppKit
 import Observation
+import os
 import SwiftUI
 import WebKit
 
@@ -17,6 +18,8 @@ final class BrowserWindowModel {
     /// URLs waiting for the next browser window to open, for example from the History window.
     @ObservationIgnored static var pendingURLs: [URL] = []
     @ObservationIgnored private(set) static weak var lastActive: BrowserWindowModel?
+
+    @ObservationIgnored private static let logger = Logger(subsystem: "com.tanush.Wayfinder", category: "Spaces")
 
     @ObservationIgnored let store: SpaceStore
     /// Every open web view in this window, across all spaces.
@@ -47,7 +50,14 @@ final class BrowserWindowModel {
             guard window !== oldValue else { return }
             keyObserver.map(NotificationCenter.default.removeObserver)
             keyObserver = nil
+            closeObserver.map(NotificationCenter.default.removeObserver)
+            closeObserver = nil
             guard let window else { return }
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.store.flush() }
+            }
             keyObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
             ) { [weak self] _ in
@@ -58,6 +68,7 @@ final class BrowserWindowModel {
     }
 
     @ObservationIgnored private var keyObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var closeObserver: (any NSObjectProtocol)?
 
     init(store: SpaceStore = .shared, restoresSession: Bool = true) {
         self.store = store
@@ -69,8 +80,8 @@ final class BrowserWindowModel {
         Self.pendingURLs = []
         if restoresSession, !Self.didRestoreSession {
             Self.didRestoreSession = true
-            store.discardTodayRecords(keepingRestorable: Preferences.restoresTabs)
-            for record in store.records where record.kind == .today {
+            store.discardTodayRecords(keepingRestorable: Preferences.restoresTabs, except: Self.loadedRecordIDs(in: store))
+            for record in store.records where record.kind == .today && Self.owner(of: record.id, in: store) == nil {
                 load(record, select: false)
                 lastSelectedTabIDs[record.spaceID] = record.id
             }
@@ -92,8 +103,12 @@ final class BrowserWindowModel {
 
     /// Open tabs of the current space: essentials, then pinned, then today.
     var tabs: [BrowserTab] {
+        tabs(in: selectedSpaceID)
+    }
+
+    private func tabs(in spaceID: Space.ID) -> [BrowserTab] {
         let loaded = Dictionary(loadedTabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return store.records(in: selectedSpaceID).compactMap { loaded[$0.id] }
+        return store.records(in: spaceID).compactMap { loaded[$0.id] }
     }
 
     var todayTabs: [BrowserTab] {
@@ -115,6 +130,17 @@ final class BrowserWindowModel {
         loadedTabs.first { $0.id == selectedTabID }
     }
 
+    /// The window that has this record's web view open, if any. A record is open in at most one window.
+    private static func owner(of recordID: TabRecord.ID, in store: SpaceStore) -> BrowserWindowModel? {
+        let windows: [BrowserWindowModel] = liveWindows.allObjects
+        return windows.first { $0.store === store && $0.loadedTabs.contains { $0.id == recordID } }
+    }
+
+    private static func loadedRecordIDs(in store: SpaceStore) -> Set<TabRecord.ID> {
+        let windows: [BrowserWindowModel] = liveWindows.allObjects
+        return Set(windows.filter { $0.store === store }.flatMap { $0.loadedTabs.map(\.id) })
+    }
+
     static var frontmost: BrowserWindowModel? {
         lastActive ?? liveWindows.allObjects.first
     }
@@ -123,9 +149,15 @@ final class BrowserWindowModel {
 
     @discardableResult
     func newTab(url: URL? = nil, select: Bool = true, after anchor: BrowserTab? = nil) -> BrowserTab {
-        let record = TabRecord(spaceID: selectedSpaceID, kind: .today)
-        let tab = BrowserTab(id: record.id, dataStore: currentSpace.dataStore)
-        insert(tab, record: record, after: anchor, select: select)
+        newTab(url: url, in: selectedSpaceID, select: select, after: anchor)
+    }
+
+    @discardableResult
+    private func newTab(url: URL?, in spaceID: Space.ID, select: Bool, after anchor: BrowserTab?) -> BrowserTab {
+        let space = store.space(spaceID) ?? currentSpace
+        let record = TabRecord(spaceID: space.id, kind: .today)
+        let tab = BrowserTab(id: record.id, dataStore: space.dataStore)
+        insert(tab, record: record, after: anchor, select: select && space.id == selectedSpaceID)
         if let url = url ?? Preferences.homepage {
             tab.load(url)
         } else if select {
@@ -135,25 +167,28 @@ final class BrowserWindowModel {
     }
 
     func openTab(with url: URL, after anchor: BrowserTab?, select: Bool) {
-        newTab(url: url, select: select, after: anchor)
+        newTab(url: url, in: anchor.flatMap { store.record($0.id)?.spaceID } ?? selectedSpaceID, select: select, after: anchor)
     }
 
     /// A tab for `window.open` or `target=_blank`. WebKit loads it after we return the web view.
-    func openPopup(configuration: WKWebViewConfiguration, after anchor: BrowserTab) -> BrowserTab {
-        let record = TabRecord(spaceID: store.record(anchor.id)?.spaceID ?? selectedSpaceID, kind: .today)
+    /// Returns nil when the opener's space is unknown, since the popup would share its profile.
+    func openPopup(configuration: WKWebViewConfiguration, after anchor: BrowserTab) -> BrowserTab? {
+        guard let spaceID = store.record(anchor.id)?.spaceID else { return nil }
+        let record = TabRecord(spaceID: spaceID, kind: .today)
         let tab = BrowserTab(id: record.id, configuration: configuration)
-        insert(tab, record: record, after: anchor, select: true)
+        insert(tab, record: record, after: anchor, select: spaceID == selectedSpaceID)
         return tab
     }
 
     func duplicate(_ tab: BrowserTab) {
-        newTab(url: tab.url, after: tab)
+        newTab(url: tab.url, in: store.record(tab.id)?.spaceID ?? selectedSpaceID, select: true, after: tab)
     }
 
     func close(_ tab: BrowserTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         // Closing a pinned or essential tab unloads it but keeps the record, reset to its home URL.
-        if store.record(tab.id)?.kind == .today {
+        let wasToday = store.record(tab.id)?.kind == .today
+        if wasToday {
             if let url = tab.url {
                 ClosedTabs.shared.push(url)
             }
@@ -167,10 +202,12 @@ final class BrowserWindowModel {
         let remaining = tabs
         if remaining.isEmpty {
             selectedTabID = nil
-            if loadedTabs.isEmpty {
-                window?.performClose(nil)
-            } else {
-                newTab()
+            if wasToday {
+                if loadedTabs.isEmpty {
+                    window?.performClose(nil)
+                } else {
+                    newTab()
+                }
             }
         } else if selectedTabID == tab.id {
             selectedTabID = remaining[min(index, remaining.count - 1)].id
@@ -201,6 +238,11 @@ final class BrowserWindowModel {
     func activate(_ record: TabRecord) {
         if let tab = tab(for: record) {
             select(tab)
+        } else if let other = Self.owner(of: record.id, in: store), let tab = other.tab(for: record) {
+            // A record is open in one window at a time, so go to the window that has it.
+            other.selectSpace(record.spaceID)
+            other.select(tab)
+            other.window?.makeKeyAndOrderFront(nil)
         } else {
             load(record, select: true)
         }
@@ -248,19 +290,38 @@ final class BrowserWindowModel {
         return space
     }
 
-    /// Removes a space, its tabs and its stored website data. The last space cannot be removed.
+    /// Removes a space, its tabs and its stored website data in every window. The last space cannot be removed.
     func removeSpace(_ id: Space.ID) {
         guard let space = store.space(id), store.spaces.count > 1 else { return }
+        let windows: [BrowserWindowModel] = Self.liveWindows.allObjects
+        for window in windows where window.store === store {
+            window.leaveSpace(id)
+        }
+        store.removeSpace(id)
+        guard !space.usesDefaultDataStore else { return }
+        Task {
+            // WebKit refuses while a web view still uses the store, and the views release a moment after teardown.
+            for attempt in 1...3 {
+                await Task.yield()
+                do {
+                    try await WKWebsiteDataStore.remove(forIdentifier: space.dataStoreID)
+                    return
+                } catch {
+                    Self.logger.error("Could not remove data store (attempt \(attempt)): \(error)")
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+        }
+    }
+
+    /// Tears down this window's tabs in a space that is being removed and moves off it.
+    private func leaveSpace(_ id: Space.ID) {
         let doomed = loadedTabs.filter { store.record($0.id)?.spaceID == id }
         doomed.forEach { $0.tearDown() }
         loadedTabs.removeAll { tab in doomed.contains { $0.id == tab.id } }
         lastSelectedTabIDs[id] = nil
         if selectedSpaceID == id, let next = store.spaces.first(where: { $0.id != id }) {
             selectSpace(next.id)
-        }
-        store.removeSpace(id)
-        if !space.usesDefaultDataStore {
-            Task { try? await WKWebsiteDataStore.remove(forIdentifier: space.dataStoreID) }
         }
     }
 
@@ -365,6 +426,10 @@ final class BrowserWindowModel {
 
     private func sync(_ tab: BrowserTab) {
         store.update(tab.id, url: tab.url, title: tab.title)
+        let state = tab.webView.interactionState.flatMap {
+            try? NSKeyedArchiver.archivedData(withRootObject: $0, requiringSecureCoding: false)
+        }
+        store.setInteractionState(tab.id, state)
     }
 
     /// Creates the web view for a stored record.
@@ -373,7 +438,8 @@ final class BrowserWindowModel {
         let tab = BrowserTab(id: record.id, dataStore: store.space(record.spaceID)?.dataStore ?? .default())
         tab.owner = self
         loadedTabs.append(tab)
-        if let state = record.interactionState {
+        if let data = record.interactionState,
+           let state = try? NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSObject.self], from: data) {
             tab.webView.interactionState = state
         } else if let url = record.url ?? record.savedURL {
             tab.load(url)
@@ -384,7 +450,7 @@ final class BrowserWindowModel {
 
     private func insert(_ tab: BrowserTab, record: TabRecord, after anchor: BrowserTab?, select: Bool) {
         tab.owner = self
-        let visible = tabs
+        let visible = tabs(in: record.spaceID)
         if let anchor, let index = visible.firstIndex(where: { $0.id == anchor.id }) {
             // Keep a run of tabs opened from the same page in order, like Safari.
             var insertionIndex = index + 1
@@ -397,7 +463,7 @@ final class BrowserWindowModel {
             store.addRecord(record)
         }
         loadedTabs.append(tab)
-        if select || selectedTabID == nil {
+        if select || (selectedTabID == nil && record.spaceID == selectedSpaceID) {
             selectedTabID = tab.id
         }
     }

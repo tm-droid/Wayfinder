@@ -3,6 +3,7 @@
 //  Wayfinder
 //
 
+import AppKit
 import Foundation
 import os
 
@@ -32,9 +33,31 @@ struct JSONFile<Value: Codable> {
         }
     }
 
+    /// Nil when the file does not exist. Throws when it exists but cannot be read or decoded.
+    func read() throws -> Value? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(Value.self, from: Data(contentsOf: url))
+    }
+
+    func write(_ value: Value) throws {
+        try JSONEncoder().encode(value).write(to: url, options: .atomic)
+    }
+
+    /// Renames the file to `<name>.corrupt-<timestamp>.json` so it is kept for recovery.
+    func moveAside() {
+        let stamp = Int(Date.now.timeIntervalSince1970)
+        let name = url.deletingPathExtension().lastPathComponent
+        let target = url.deletingLastPathComponent().appending(path: "\(name).corrupt-\(stamp).json")
+        do {
+            try FileManager.default.moveItem(at: url, to: target)
+        } catch {
+            Self.logger.error("Could not move aside \(url.lastPathComponent): \(error)")
+        }
+    }
+
     func save(_ value: Value) {
         do {
-            try JSONEncoder().encode(value).write(to: url, options: .atomic)
+            try write(value)
         } catch {
             Self.logger.error("Could not write \(url.lastPathComponent): \(error)")
         }
@@ -44,18 +67,39 @@ struct JSONFile<Value: Codable> {
 /// Coalesces bursts of changes into a single save.
 final class SaveScheduler {
     private var pending: Task<Void, Never>?
+    private var pendingSave: (() -> Void)?
     private let delay: Duration
+    private var terminationObserver: (any NSObjectProtocol)?
 
     init(delay: Duration = .seconds(1)) {
         self.delay = delay
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.flush() }
+        }
+    }
+
+    deinit {
+        terminationObserver.map(NotificationCenter.default.removeObserver)
     }
 
     func schedule(_ save: @escaping () -> Void) {
         pending?.cancel()
+        pendingSave = save
         pending = Task { [delay] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            save()
+            self.flush()
         }
+    }
+
+    /// Runs the waiting save now, if there is one.
+    func flush() {
+        pending?.cancel()
+        pending = nil
+        guard let save = pendingSave else { return }
+        pendingSave = nil
+        save()
     }
 }

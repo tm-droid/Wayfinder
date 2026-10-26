@@ -3,6 +3,7 @@
 //  WayfinderTests
 //
 
+import WebKit
 import XCTest
 @testable import Wayfinder
 
@@ -183,5 +184,83 @@ final class SpaceModelTests: XCTestCase {
         XCTAssertNotNil(store.record(tab.id))
         XCTAssertFalse(model.tabs.contains { $0.id == tab.id })
         XCTAssertTrue(model.visibleRecords.contains { $0.id == tab.id })
+    }
+
+    func testCorruptFileIsMovedAsideNotOverwritten() throws {
+        let url = directory.appending(path: "Spaces.json")
+        try Data("not json".utf8).write(to: url)
+        defaults.set(["https://stale.example"], forKey: PreferenceKey.savedTabs)
+
+        let store = makeStore()
+        XCTAssertEqual(store.spaces.count, 1)
+        XCTAssertTrue(store.records.isEmpty)
+        XCTAssertNotNil(defaults.object(forKey: PreferenceKey.savedTabs))
+        let kept = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("Spaces.corrupt-") }
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: directory.appending(path: kept[0])), Data("not json".utf8))
+    }
+
+    func testMigrationKeyKeptWhenWriteFails() throws {
+        defaults.set(["https://apple.com"], forKey: PreferenceKey.savedTabs)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        _ = makeStore()
+        XCTAssertNotNil(defaults.object(forKey: PreferenceKey.savedTabs))
+    }
+
+    func testPopupFromOtherSpaceStaysThereUnselected() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let anchor = model.selectedTab!
+        let personal = model.selectedSpaceID
+        let work = model.addSpace(name: "Work")
+        let selected = model.selectedTabID
+
+        let popup = model.openPopup(configuration: WKWebViewConfiguration(), after: anchor)
+        XCTAssertEqual(store.record(popup!.id)?.spaceID, personal)
+        XCTAssertEqual(model.selectedSpaceID, work.id)
+        XCTAssertEqual(model.selectedTabID, selected)
+    }
+
+    func testTabOpenedFromAnchorUsesAnchorSpace() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let anchor = model.selectedTab!
+        let personal = model.selectedSpaceID
+        let work = model.addSpace(name: "Work")
+        let selected = model.selectedTabID
+
+        model.openTab(with: URL(string: "https://example.com")!, after: anchor, select: true)
+        model.duplicate(anchor)
+        let added = store.records(in: personal).filter { $0.id != anchor.id }
+        XCTAssertEqual(added.count, 2)
+        XCTAssertEqual(store.records(in: work.id).count, 1)
+        XCTAssertEqual(model.selectedTabID, selected)
+    }
+
+    func testRecordIsLoadedInOnlyOneWindow() {
+        let store = makeStore()
+        let first = BrowserWindowModel(store: store, restoresSession: false)
+        let tab = first.selectedTab!
+        first.pin(tab)
+        let second = BrowserWindowModel(store: store, restoresSession: false)
+        first.newTab()
+
+        second.activate(store.record(tab.id)!)
+        XCTAssertNil(second.tab(for: store.record(tab.id)!))
+        XCTAssertEqual(first.selectedTabID, tab.id)
+    }
+
+    func testClosingLastPinnedTabCreatesNoTodayTab() {
+        let store = makeStore()
+        let model = BrowserWindowModel(store: store, restoresSession: false)
+        let tab = model.selectedTab!
+        model.pin(tab)
+        model.close(tab)
+        XCTAssertNil(model.selectedTabID)
+        XCTAssertTrue(model.tabs.isEmpty)
+        XCTAssertTrue(store.records(in: model.selectedSpaceID, kind: .today).isEmpty)
+        XCTAssertNotNil(store.record(tab.id))
     }
 }

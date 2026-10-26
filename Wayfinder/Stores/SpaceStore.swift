@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import os
 import SwiftUI
 import WebKit
 
@@ -72,22 +73,37 @@ final class SpaceStore {
     private(set) var folders: [Folder]
     private(set) var records: [TabRecord]
 
+    @ObservationIgnored private static let logger = Logger(subsystem: "com.tanush.Wayfinder", category: "Storage")
     @ObservationIgnored private let file: JSONFile<Snapshot>
     @ObservationIgnored private let saver = SaveScheduler(delay: .milliseconds(200))
 
     init(file: JSONFile<Snapshot> = JSONFile(name: "Spaces.json"), defaults: UserDefaults = .standard) {
         self.file = file
-        if let snapshot = file.load(), !snapshot.spaces.isEmpty {
+        var snapshot: Snapshot?
+        var isCorrupt = false
+        do {
+            snapshot = try file.read()
+        } catch {
+            Self.logger.error("Spaces.json is unreadable, moving it aside: \(error)")
+            file.moveAside()
+            isCorrupt = true
+        }
+        if let snapshot, !snapshot.spaces.isEmpty {
             spaces = snapshot.spaces
             folders = snapshot.folders
             records = snapshot.records
         } else {
             // First run with spaces: carry over the old session into a Space that keeps the existing cookies.
             let personal = Space(name: "Personal", icon: "person.crop.circle", usesDefaultDataStore: true)
-            let urls = (defaults.stringArray(forKey: PreferenceKey.savedTabs) ?? []).compactMap(URL.init(string:))
+            // A corrupt file means the old key may be stale, so only a missing file migrates.
+            let urls = isCorrupt ? [] : (defaults.stringArray(forKey: PreferenceKey.savedTabs) ?? []).compactMap(URL.init(string:))
             let imported = urls.map { TabRecord(spaceID: personal.id, url: $0, kind: .today) }
-            defaults.removeObject(forKey: PreferenceKey.savedTabs)
-            file.save(Snapshot(spaces: [personal], folders: [], records: imported))
+            do {
+                try file.write(Snapshot(spaces: [personal], folders: [], records: imported))
+                if !isCorrupt { defaults.removeObject(forKey: PreferenceKey.savedTabs) }
+            } catch {
+                Self.logger.error("Could not write Spaces.json, keeping the old saved tabs: \(error)")
+            }
             spaces = [personal]
             folders = []
             records = imported
@@ -180,6 +196,10 @@ final class SpaceStore {
         mutate(id) { $0.lastAccessedAt = .now }
     }
 
+    func setInteractionState(_ id: TabRecord.ID, _ state: Data?) {
+        mutate(id) { $0.interactionState = state }
+    }
+
     func pin(_ id: TabRecord.ID) {
         mutate(id) {
             if $0.kind != .pinned { $0.savedURL = $0.url }
@@ -219,8 +239,11 @@ final class SpaceStore {
     }
 
     /// Drops today tabs that will not be restored: all of them, or only those without a page.
-    func discardTodayRecords(keepingRestorable: Bool) {
-        records.removeAll { $0.kind == .today && (!keepingRestorable || $0.url == nil) }
+    /// Records in `loaded` are open in a window and are never dropped.
+    func discardTodayRecords(keepingRestorable: Bool, except loaded: Set<TabRecord.ID> = []) {
+        records.removeAll {
+            $0.kind == .today && !loaded.contains($0.id) && (!keepingRestorable || $0.url == nil)
+        }
         scheduleSave()
     }
 
