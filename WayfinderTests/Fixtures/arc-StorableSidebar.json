@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "sidebar": {
+    "containers": [
+      { "global": {} },
+      {
+        "topAppsContainerIDs": [ { "default": true }, "ESS-1" ],
+        "spaces": [
+          {
+            "id": "SPACE-A",
+            "title": "Work",
+            "customInfo": {
+              "iconType": { "emoji_v2": "💼" },
+              "windowTheme": { "primaryColorPalette": { "midTone": { "red": 1.0, "green": 0.5, "blue": 0.0 } } }
+            },
+            "containerIDs": [ "PIN-A", "UNPIN-A" ],
+            "newContainerIDs": [ { "pinned": {} }, "PIN-A", { "unpinned": {} }, "UNPIN-A" ]
+          },
+          {
+            "id": "SPACE-B",
+            "newContainerIDs": [ { "pinned": {} }, "PIN-B", { "unpinned": {} }, "UNPIN-B" ]
+          }
+        ],
+        "items": [
+          "T1",
+          { "id": "T1", "parentID": "PIN-A", "title": null,
+            "data": { "tab": { "savedURL": "https://github.com", "savedTitle": "GitHub" } } },
+          "F1",
+          { "id": "F1", "parentID": "PIN-A", "title": "Docs",
+            "childrenIds": [ "T3", "T2" ],
+            "data": { "list": {} } },
+          "T2",
+          { "id": "T2", "parentID": "F1", "title": "Swift",
+            "data": { "tab": { "savedURL": "https://swift.org", "savedTitle": "Swift.org" } } },
+          "T3",
+          { "id": "T3", "parentID": "F1", "title": null,
+            "data": { "tab": { "savedURL": "https://developer.apple.com", "savedTitle": "Apple Developer" } } },
+          "T4",
+          { "id": "T4", "parentID": "PIN-A", "title": null,
+            "data": { "tab": { "savedURL": "javascript:alert(1)", "savedTitle": "Bad" } } },
+          "T5",
+          { "id": "T5", "parentID": "PIN-B", "title": null,
+            "data": { "tab": { "savedURL": "https://news.ycombinator.com", "savedTitle": "Hacker News" } } },
+          "T6",
+          { "id": "T6", "parentID": "UNPIN-A", "title": null,
+            "data": { "tab": { "savedURL": "https://example.com/today", "savedTitle": "Today tab" } } },
+          "E1",
+          { "id": "E1", "parentID": "ESS-1", "title": null,
+            "data": { "tab": { "savedURL": "https://mail.google.com", "savedTitle": "Gmail" } } },
+          "X1",
+          { "id": "X1", "parentID": "PIN-A", "title": "Unknown kind", "data": { "somethingNew": {} } },
+          { "noId": true }
+        ]
+      }
+    ]
+  }
+}
