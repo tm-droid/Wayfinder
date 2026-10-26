@@ -16,9 +16,13 @@ struct BrowserCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Tab") {
-                if let model { model.newTab() } else { openWindow(id: WayfinderApp.browserWindowID) }
+                if let model { model.showCommandBar(.newTab) } else { openWindow(id: WayfinderApp.browserWindowID) }
             }
             .keyboardShortcut("t")
+
+            Button("New Blank Tab") { model?.newTab() }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .disabled(model == nil)
 
             Button("Reopen Closed Tab") {
                 if let model {
@@ -31,7 +35,7 @@ struct BrowserCommands: Commands {
             .keyboardShortcut("t", modifiers: [.command, .shift])
             .disabled(ClosedTabs.shared.isEmpty)
 
-            Button("Open Location…") { model?.focusAddressBar() }
+            Button("Open Location…") { model?.showCommandBar(.current) }
                 .keyboardShortcut("l")
                 .disabled(model == nil)
 

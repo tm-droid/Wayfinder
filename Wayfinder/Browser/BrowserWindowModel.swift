@@ -36,6 +36,7 @@ final class BrowserWindowModel {
     @ObservationIgnored private var lastSelectedTabIDs: [Space.ID: BrowserTab.ID] = [:]
 
     let address = AddressFieldState()
+    let commandBar = CommandBarState()
     var isFindBarVisible = false
     var findText = ""
     private(set) var findHasNoMatches = false
@@ -260,6 +261,7 @@ final class BrowserWindowModel {
     /// Selects a tab, loading it first if it is an unloaded pinned or essential tab.
     func activate(_ record: TabRecord) {
         if let tab = tab(for: record) {
+            selectedSpaceID = record.spaceID
             select(tab)
         } else if let other = Self.owner(of: record.id, in: store), let tab = other.tab(for: record) {
             // A record is open in one window at a time, so go to the window that has it.
@@ -267,6 +269,7 @@ final class BrowserWindowModel {
             other.select(tab)
             other.window?.makeKeyAndOrderFront(nil)
         } else {
+            selectedSpaceID = record.spaceID
             load(record, select: true)
         }
     }

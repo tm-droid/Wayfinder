@@ -19,6 +19,7 @@ struct BrowserWindow: View {
         }
         .navigationTitle(model.selectedTab?.displayTitle ?? "Wayfinder")
         .toolbar(removing: .title)
+        .overlay { CommandBarView(model: model) }
         .focusedSceneValue(model)
         .background(WindowAccessor { model.window = $0 })
         .frame(minWidth: 720, minHeight: 480)
