@@ -10,6 +10,7 @@ import Observation
 @Observable
 final class FaviconLoader {
     static let shared = FaviconLoader()
+    private static let session = URLSession(configuration: .ephemeral)
 
     /// Bumped whenever a download adds an icon, so views re-read the cache.
     private var revision = 0
@@ -45,14 +46,15 @@ final class FaviconLoader {
         guard let host = pageURL.host() else { return nil }
         if let task = inFlight[host] { return await task.value }
 
-        var urls = candidates
+        // Candidates come from the page, so only fetch web URLs, and never with the user's cookies.
+        var urls = candidates.filter { ["http", "https"].contains($0.scheme?.lowercased()) }
         if let fallback = URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL, !urls.contains(fallback) {
             urls.append(fallback)
         }
 
         let task = Task<NSImage?, Never> {
             for url in urls {
-                guard let (data, response) = try? await URLSession.shared.data(from: url),
+                guard let (data, response) = try? await Self.session.data(from: url),
                       (response as? HTTPURLResponse)?.statusCode ?? 200 < 400,
                       let image = NSImage(data: data), image.isValid else { continue }
                 return image

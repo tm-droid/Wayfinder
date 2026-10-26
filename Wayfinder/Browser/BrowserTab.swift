@@ -239,8 +239,9 @@ final class BrowserTab: NSObject, Identifiable {
         alert.messageText = message
         if let informativeText { alert.informativeText = informativeText }
         configure(alert)
+        // A background tab must not pull itself to the front or draw a sheet over another page.
         if let owner, owner.selectedTabID != id {
-            owner.select(self)
+            return .cancel
         }
         if let window = webView.window ?? owner?.window {
             return await alert.beginSheetModal(for: window)
@@ -283,9 +284,20 @@ extension BrowserTab: WKNavigationDelegate {
 
         if let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(),
            !["http", "https", "about", "data", "blob", "file", "javascript"].contains(scheme) {
-            // mailto:, tel:, facetime: and friends belong to other apps. Only follow them on a click.
-            if isLinkClick || navigationAction.navigationType == .formSubmitted {
+            // mailto:, tel:, facetime: and friends belong to other apps. Only follow them on a click,
+            // and ask first for anything beyond the common communication schemes, like Safari does.
+            guard isLinkClick, let appURL = NSWorkspace.shared.urlForApplication(toOpen: url) else { return .cancel }
+            if ["mailto", "tel", "sms", "facetime", "facetime-audio"].contains(scheme) {
                 NSWorkspace.shared.open(url)
+            } else if let window = webView.window {
+                let alert = NSAlert()
+                alert.messageText = "Allow this page to open “\(FileManager.default.displayName(atPath: appURL.path))”?"
+                alert.informativeText = url.absoluteString
+                alert.addButton(withTitle: "Allow")
+                alert.addButton(withTitle: "Cancel")
+                if await alert.beginSheetModal(for: window) == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(url)
+                }
             }
             return .cancel
         }
