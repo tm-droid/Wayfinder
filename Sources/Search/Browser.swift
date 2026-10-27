@@ -354,6 +354,9 @@ final class Browser: NSObject, ObservableObject {
 
     /// This window's profile's (see Profiles.swift).
     let history: History
+    /// And its archive of tabs let go and its privacy report.
+    let archive: Archive
+    let report: PrivacyReport
     /// What the field is offering, best first.
     @Published private(set) var offers: [Suggestion] = []
     /// The rest of the best match, drawn grey after the caret. Tab takes it.
@@ -1453,8 +1456,10 @@ final class Browser: NSObject, ObservableObject {
         // are the searches learned from sites visited (SiteSearch.swift).
         Favicons.shared.forgetAll()
         SiteSearch.forget()
-        // The privacy report lists the sites it saw trackers on (Report.swift).
-        PrivacyReport.shared.clear()
+        // The privacy report lists the sites it saw trackers on (Report.swift),
+        // and the archive the pages of the tabs let go (Archive.swift).
+        report.clear()
+        archive.clear()
         announce("History cleared")
     }
 
@@ -2197,6 +2202,8 @@ final class Browser: NSObject, ObservableObject {
         let loaded = Spaces.read(profile: profile)
         spaces = loaded
         history = Profiles.history(profile)
+        archive = Profiles.archive(profile)
+        report = Profiles.report(profile)
         bookmarks = Profiles.bookmarks(profile)
         // With spaces off, the window is the profile's home: the session and
         // the store that were there before spaces, wherever its dot has been
@@ -3961,7 +3968,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func clear(_ going: [Tab], batch: UUID) {
         lastClear = (batch, nil)
-        for tab in going { Archive.shared.keep(tab) }
+        for tab in going { archive.keep(tab) }
         for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
         let onScreen = going.filter { visibleTabIDs.contains($0.id) }
         // Already an empty tab in front: that is where Clear leaves you.
@@ -5674,6 +5681,7 @@ final class Browser: NSObject, ObservableObject {
 
     func prepare(_ tab: Tab) {
         tab.delegate = self
+        tab.reports.report = report
         // With two pages up, the keys going to the other one — Tab walked
         // past the last field of this one — make it the focused page, so the
         // outline, ⌘L and the site card follow what is being typed into.

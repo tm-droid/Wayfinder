@@ -178,4 +178,24 @@ final class ProfilesTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: Store.file("history-\(made.id.uuidString).json").path))
         XCTAssertFalse(Profiles.history(made.id).everything().contains { $0.url == url }, "a deleted profile's history is not read back")
     }
+
+    func testDeletingAProfileRemovesItsArchiveAndReportFiles() throws {
+        let made = Profiles.shared.add(named: "Gone too")
+        let tab = Tab(shy: false, configuration: Web.configuration(space: UUID()))
+        tab.restore(url: try XCTUnwrap(URL(string: "https://gone.example/")), title: "Gone")
+        tab.setAddressOptimistically(try XCTUnwrap(URL(string: "https://gone.example/")))
+        Profiles.archive(made.id).keep(tab)
+        var seen = Set<String>()
+        Profiles.report(made.id).note(hosts: ["t.example"], page: "gone.example", shy: false, blocking: true,
+                                      seen: &seen, trackers: ["t.example"])
+        Disk.drain()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: Store.file(Archive.fileName(for: made.id)).path))
+        Profiles.shared.delete(made.id)
+        let pause = expectation(description: "save window")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { pause.fulfill() }
+        wait(for: [pause], timeout: 3)
+        Disk.drain()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: Store.file(Archive.fileName(for: made.id)).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: Store.file(PrivacyReport.fileName(for: made.id)).path))
+    }
 }

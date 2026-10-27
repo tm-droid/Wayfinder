@@ -17,7 +17,10 @@ final class Archive: ObservableObject {
         var at: Date
     }
 
-    static let shared = Archive(file: Store.file("archive.json"))
+    /// A profile's file: Personal's is archive.json, as ever.
+    nonisolated static func fileName(for profile: UUID) -> String {
+        profile == Profile.personalID ? "archive.json" : "archive-\(profile.uuidString).json"
+    }
 
     /// How long a tab stays in it.
     nonisolated static let keeps: TimeInterval = 30 * 24 * 3600
@@ -31,7 +34,19 @@ final class Archive: ObservableObject {
     init(file: URL) {
         self.file = file
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([Entry].self, from: data) {
-            entries = Archive.pruned(saved)
+            entries = Archive.pruned(Archive.cleaned(saved))
+        }
+    }
+
+    /// Addresses without the credentials an older file may hold (see
+    /// History.kept), the same page once.
+    nonisolated static func cleaned(_ entries: [Entry]) -> [Entry] {
+        var seen = Set<URL>()
+        return entries.compactMap { entry in
+            guard let url = History.kept(entry.url), seen.insert(url).inserted else { return nil }
+            var entry = entry
+            entry.url = url
+            return entry
         }
     }
 
@@ -53,8 +68,9 @@ final class Archive: ObservableObject {
     /// A tab let go: kept unless it is private or not a web page. The same
     /// page again replaces its older line.
     func keep(_ tab: Tab, at now: Date = Date()) {
-        guard !tab.shy, let url = tab.pending ?? tab.address,
-              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+        guard !tab.shy, let address = tab.pending ?? tab.address,
+              let scheme = address.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let url = History.kept(address)
         else { return }
         entries.removeAll { $0.url == url }
         entries.insert(Entry(url: url, title: tab.title, at: now), at: 0)
@@ -72,7 +88,17 @@ final class Archive: ObservableObject {
         save()
     }
 
+    /// Its profile deleted: emptied, its file removed, and nothing written again.
+    func retire() {
+        retired = true
+        entries = []
+        Disk.remove(file)
+    }
+
+    private var retired = false
+
     private func save() {
+        guard !retired else { return }
         let list = entries, file = file
         Disk.write(file) { try? JSONEncoder().encode(list) }
     }

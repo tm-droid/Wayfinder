@@ -162,7 +162,7 @@ struct InternalPageView: View {
             PasswordsPanel(browser: browser)
                 .onAppear { browser.relist() }
         case .archive:
-            ArchivePanel(browser: browser, archive: Archive.shared)
+            ArchivePanel(browser: browser, archive: browser.archive)
         case .importing:
             ImportPanel(browser: browser)
         case .notes:

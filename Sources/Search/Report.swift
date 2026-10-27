@@ -180,13 +180,17 @@ struct PrivacyLedger: Codable, Equatable {
 
 @MainActor
 final class PrivacyReport: ObservableObject {
-    static let shared = PrivacyReport()
+    /// A profile's file: Personal's is privacy-report.json, as ever.
+    nonisolated static func fileName(for profile: UUID) -> String {
+        profile == Profile.personalID ? "privacy-report.json" : "privacy-report-\(profile.uuidString).json"
+    }
 
     @Published private(set) var ledger = PrivacyLedger()
     private var saving = false
+    private var retired = false
     private let file: URL?
 
-    init(file: URL? = Store.file("privacy-report.json")) {
+    init(file: URL?) {
         self.file = file
         if let file, let data = try? Data(contentsOf: file),
            let stored = try? JSONDecoder().decode(PrivacyLedger.self, from: data) {
@@ -222,20 +226,22 @@ final class PrivacyReport: ObservableObject {
         save()
     }
 
+    /// Its profile deleted: emptied, its file removed, and nothing written again.
+    func retire() {
+        retired = true
+        ledger = PrivacyLedger()
+        if let file { Disk.remove(file) }
+    }
+
     private func save() {
         guard let file, !saving else { return }
         saving = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             saving = false
+            guard !retired else { return }
             let snapshot = ledger
-            DispatchQueue.global(qos: .utility).async {
-                guard let data = try? JSONEncoder().encode(snapshot) else { return }
-                try? FileManager.default.createDirectory(
-                    at: file.deletingLastPathComponent(), withIntermediateDirectories: true
-                )
-                try? data.write(to: file, options: .atomic)
-            }
+            Disk.write(file) { try? JSONEncoder().encode(snapshot) }
         }
     }
 }
@@ -245,6 +251,8 @@ final class ReportRelay: NSObject, WKScriptMessageHandler {
     static let name = "officeReport"
 
     weak var tab: Tab?
+    /// The report of the profile the tab's window is in (Browser.prepare).
+    var report: PrivacyReport?
     /// The tracker domains Shield was on for, counted on the page now; a new
     /// document starts again.
     private(set) var prevented: [String] = []
@@ -296,7 +304,8 @@ final class ReportRelay: NSObject, WKScriptMessageHandler {
             guard let tab, !tab.shy, let url = tab.pageAddress,
                   ["http", "https"].contains(url.scheme?.lowercased()), let page = url.host() else { return }
             let blocking = Shield.shared.enabled && !Shield.shared.isPaused(on: page)
-            let fresh = PrivacyReport.shared.note(
+            guard let report else { return }
+            let fresh = report.note(
                 hosts: hosts, page: page, shy: tab.shy, blocking: blocking, seen: &seen
             )
             if blocking { prevented += fresh }
@@ -308,7 +317,7 @@ final class ReportRelay: NSObject, WKScriptMessageHandler {
 
 /// Settings › Privacy › Privacy report: the last 7 or 30 days.
 struct PrivacyReportView: View {
-    @ObservedObject private var report = PrivacyReport.shared
+    @ObservedObject var report: PrivacyReport
     @State private var span = 7
 
     var body: some View {

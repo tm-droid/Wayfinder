@@ -91,6 +91,8 @@ final class Profiles: ObservableObject {
     static var madeStores: [WKWebsiteDataStore] { Array(stores.values) }
 
     private static var histories: [UUID: History] = [:]
+    private static var archiveLists: [UUID: Archive] = [:]
+    private static var privacyReports: [UUID: PrivacyReport] = [:]
     private static var bookmarkLists: [UUID: Bookmarks] = [:]
 
     /// Its history: Personal's in history.json, as always; another's in a
@@ -99,6 +101,22 @@ final class Profiles: ObservableObject {
         if let made = histories[id] { return made }
         let made = History(file: id == Profile.personalID ? "history.json" : "history-\(id.uuidString).json")
         histories[id] = made
+        return made
+    }
+
+    /// Its archive of tabs let go (see Archive.swift).
+    static func archive(_ id: UUID) -> Archive {
+        if let made = archiveLists[id] { return made }
+        let made = Archive(file: Store.file(Archive.fileName(for: id)))
+        archiveLists[id] = made
+        return made
+    }
+
+    /// Its privacy report (see Report.swift).
+    static func report(_ id: UUID) -> PrivacyReport {
+        if let made = privacyReports[id] { return made }
+        let made = PrivacyReport(file: Store.file(PrivacyReport.fileName(for: id)))
+        privacyReports[id] = made
         return made
     }
 
@@ -159,8 +177,11 @@ final class Profiles: ObservableObject {
         Spaces.eraseStore(Profiles.stores.removeValue(forKey: id), id: id)
         Profiles.histories.removeValue(forKey: id)?.retire()
         Profiles.bookmarkLists.removeValue(forKey: id)?.retire()
+        Profiles.archiveLists.removeValue(forKey: id)?.retire()
+        Profiles.privacyReports.removeValue(forKey: id)?.retire()
         // Never opened this run: their files go all the same.
-        for name in ["history-\(id.uuidString).json", "bookmarks-\(id.uuidString).json"] {
+        for name in ["history-\(id.uuidString).json", "bookmarks-\(id.uuidString).json",
+                     Archive.fileName(for: id), PrivacyReport.fileName(for: id)] {
             Disk.remove(Store.file(name))
         }
         Store.settings.removeObject(forKey: "space.current.\(id.uuidString)")
