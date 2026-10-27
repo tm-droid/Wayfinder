@@ -10,7 +10,7 @@ final class ModTests: XCTestCase {
     }
 
     func testGoodManifestLoads() throws {
-        let json = #"{"id":"com.example.calm","name":"Calm","author":"Me","version":"1.2","look":{"grain":0.2},"flags":{"hoverOnlyClose":true,"dimUnloadedTabs":0.4},"css":"body{color:red}"}"#
+        let json = #"{"id":"com.example.calm","name":"Calm","author":"Me","version":"1.2","look":{"grain":0.2},"flags":{"hoverOnlyClose":true,"dimUnloadedTabs":0.4}}"#
         let mod = try load(json).get()
         XCTAssertEqual(mod.look?.grain, 0.2)
         XCTAssertEqual(mod.flags?.dimUnloadedTabs, 0.4)
@@ -33,24 +33,11 @@ final class ModTests: XCTestCase {
         XCTAssertEqual(errors(#"{"id":"a.b","name":"\#(String(repeating: "n", count: 61))"}"#), [.nameTooLong])
     }
 
-    func testOversizeCSS() {
-        let big = String(repeating: "a{}", count: Mod.maxCSSBytes / 3 + 10)
-        XCTAssertEqual(Mod(id: "a.b", name: "X", css: big).validate(), [.cssTooLarge(bytes: big.utf8.count)])
-        XCTAssertTrue(Mod(id: "a.b", name: "X", css: String(repeating: "a", count: Mod.maxCSSBytes)).validate().isEmpty)
-    }
-
-    func testRemoteCSSRejected() {
-        func check(_ css: String, _ expected: ModError, file: StaticString = #filePath, line: UInt = #line) {
-            XCTAssertTrue(Mod(id: "a.b", name: "X", css: css).validate().contains(expected), css, file: file, line: line)
+    func testCSSIsRefused() {
+        // Mods carry no CSS: the browser's own pages are native, so a css key is unknown.
+        guard case .failure(.unreadable) = Mod.load(Data(#"{"id":"a.b","name":"X","css":"a{}"}"#.utf8)) else {
+            return XCTFail("a manifest with css must not load")
         }
-        check("@import 'x.css';", .cssImport)
-        check("@IMPORT url(x.css);", .cssImport)
-        check("a{background:url(https://evil.test/x.png)}", .cssRemoteURL)
-        check("a{background:URL( 'HTTP://evil.test/x' )}", .cssRemoteURL)
-        check("a{background:url(//evil.test/x.png)}", .cssRemoteURL)
-        check("a{background:url(\"//evil.test/x.png\")}", .cssRemoteURL)
-        check("a{content:\"\\75rl(x)\"}", .cssEscape)
-        XCTAssertTrue(Mod(id: "a.b", name: "X", css: "a{background:url(data:image/png;base64,AAAA)} /* // ok */").validate().isEmpty)
     }
 
     func testFlagRanges() {

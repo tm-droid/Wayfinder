@@ -2,14 +2,10 @@ import Foundation
 
 // Mods: small declarative changes to the browser's look, like Zen's. A mod is
 // data, never code: a name, an optional partial look (SpaceLook.swift), a few
-// switches from a closed list, and optionally CSS for the browser's own
-// pages. There is no field that runs anything, and a manifest with a key or
-// flag this version does not know is refused rather than half-applied, so a
-// mod cannot ask for more than it is shown to do.
-//
-// The CSS is for internal pages only and stays offline: capped in size, and
-// nothing that names an address on the network, @import, or a backslash
-// escape that could spell one.
+// switches from a closed list. There is no field that runs anything, and no
+// CSS (the browser's own pages are native). A manifest with a key or flag
+// this version does not know is refused rather than half-applied, so a mod
+// cannot ask for more than it is shown to do.
 
 /// The switches a mod can set; `ModFlags` holds their values.
 enum ModFlag: String, Codable, CaseIterable {
@@ -98,10 +94,6 @@ enum ModError: Error, Equatable {
     case nameTooLong
     case authorTooLong
     case badVersion
-    case cssTooLarge(bytes: Int)
-    case cssImport
-    case cssRemoteURL
-    case cssEscape
     case flagOutOfRange(ModFlag)
 }
 
@@ -113,28 +105,24 @@ struct Mod: Codable, Equatable, Identifiable {
     var version: String
     var look: SpaceLook?
     var flags: ModFlags?
-    /// For the browser's own pages only; see `validate()`.
-    var css: String?
 
-    static let maxCSSBytes = 32 * 1024
     static let maxNameLength = 60
     static let maxAuthorLength = 80
 
     init(id: String, name: String, author: String = "", version: String = "1.0.0",
-         look: SpaceLook? = nil, flags: ModFlags? = nil, css: String? = nil) {
+         look: SpaceLook? = nil, flags: ModFlags? = nil) {
         self.id = id
         self.name = name
         self.author = author
         self.version = version
         self.look = look
         self.flags = flags
-        self.css = css
     }
 
     /// Strict: any key but the ones below throws, so nothing unreviewed rides along.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: ModKey.self)
-        let known: Set<String> = ["id", "name", "author", "version", "look", "flags", "css"]
+        let known: Set<String> = ["id", "name", "author", "version", "look", "flags"]
         for key in c.allKeys where !known.contains(key.stringValue) {
             throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "unknown key \(key.stringValue)")
         }
@@ -144,7 +132,6 @@ struct Mod: Codable, Equatable, Identifiable {
         version = try c.decodeIfPresent(String.self, forKey: ModKey("version")) ?? "1.0.0"
         look = try c.decodeIfPresent(SpaceLook.self, forKey: ModKey("look"))
         flags = try c.decodeIfPresent(ModFlags.self, forKey: ModKey("flags"))
-        css = try c.decodeIfPresent(String.self, forKey: ModKey("css"))
     }
 
     /// Everything wrong with it, empty if it is sound.
@@ -159,7 +146,6 @@ struct Mod: Codable, Equatable, Identifiable {
             if let v = flags.dimUnloadedTabs, !(ModFlags.dimRange ~= v) { errors.append(.flagOutOfRange(.dimUnloadedTabs)) }
             if let v = flags.tabTextSize, !(ModFlags.tabTextSizeRange ~= v) { errors.append(.flagOutOfRange(.tabTextSize)) }
         }
-        if let css { errors += Mod.cssErrors(css) }
         return errors
     }
 
@@ -193,30 +179,6 @@ struct Mod: Codable, Equatable, Identifiable {
     static func isValidVersion(_ v: String) -> Bool {
         let parts = v.split(separator: ".", omittingEmptySubsequences: false)
         return (1...3).contains(parts.count) && parts.allSatisfy { !$0.isEmpty && $0.count <= 6 && $0.allSatisfy { $0.isASCII && $0.isNumber } }
-    }
-
-    static func cssErrors(_ css: String) -> [ModError] {
-        var errors: [ModError] = []
-        let bytes = css.utf8.count
-        if bytes > maxCSSBytes { errors.append(.cssTooLarge(bytes: bytes)) }
-        let lower = css.lowercased()
-        if lower.contains("@import") { errors.append(.cssImport) }
-        if lower.contains("http://") || lower.contains("https://") || lower.contains("//") && hasProtocolRelativeURL(lower) {
-            errors.append(.cssRemoteURL)
-        }
-        if css.contains("\\") { errors.append(.cssEscape) }
-        return errors
-    }
-
-    /// `url(//host/x)` and `url("//host/x")`: an address that borrows the page's scheme.
-    private static func hasProtocolRelativeURL(_ lower: String) -> Bool {
-        var rest = Substring(lower)
-        while let r = rest.range(of: "url(") {
-            rest = rest[r.upperBound...]
-            let arg = rest.drop { $0 == " " || $0 == "\"" || $0 == "'" || $0 == "\n" || $0 == "\t" }
-            if arg.hasPrefix("//") { return true }
-        }
-        return false
     }
 
     private static func describe(_ error: Error) -> String {
