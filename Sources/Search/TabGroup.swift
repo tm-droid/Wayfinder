@@ -71,6 +71,23 @@ extension TabGroup {
         return (out, held)
     }
 
+    /// Groups read from a file with every `parent` that points nowhere, loops
+    /// back or sits past the depth cap dropped: that folder is top level.
+    static func sane(_ groups: [TabGroup]) -> [TabGroup] {
+        var out = groups
+        for i in out.indices {
+            guard let up = out[i].parent else { continue }
+            var at: UUID? = up, steps = 1, ok = true
+            while let id = at {
+                guard id != out[i].id, steps < maxDepth, let g = groups.first(where: { $0.id == id }) else { ok = false; break }
+                at = g.parent
+                steps += 1
+            }
+            if !ok { out[i].parent = nil }
+        }
+        return out
+    }
+
     /// Hidden by a folded folder above it, however deep.
     static func hidden(_ id: UUID, in groups: [TabGroup]) -> Bool {
         var at = groups.first { $0.id == id }?.parent, steps = 0

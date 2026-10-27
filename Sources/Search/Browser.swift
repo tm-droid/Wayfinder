@@ -1590,6 +1590,8 @@ final class Browser: NSObject, ObservableObject {
             removeEmptyGroup(previousGroup)
             tab.pin = tab.monogram
             tab.home = tab.pending ?? tab.address
+            // A square only while the space has room (see essentialRoom).
+            let listed = listed || !essentialRoom()
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand: a square
             // after the squares, a row after the rows.
@@ -1605,11 +1607,23 @@ final class Browser: NSObject, ObservableObject {
     /// Essentials a space shows at most, its shared ones included: more would
     /// be a wall of icons, not a row of favourites.
     static let essentialCap = 12
-    var essentialCount: Int { tabs.filter { $0.pin != nil && !$0.shy && !$0.listed }.count }
+    /// Counted from what is saved, this space's pins and its profile's shared
+    /// ones, not from this window's tabs: another window may hold more.
+    var essentialCount: Int { essentials(of: spaceID) }
+    func essentials(of space: UUID) -> Int {
+        Pins.essentialCount(Pins.defs(space), Pins.shared(profileID))
+    }
+    /// Whether one more square fits, here and (with `everywhere`) in every
+    /// space of the profile, which would all show it. The one place the cap
+    /// is checked: a pin made while it is full is a row instead.
+    func essentialRoom(everywhere: Bool = false) -> Bool {
+        let spaces = everywhere ? Spaces.read(profile: profileID).map(\.id) + [spaceID] : [spaceID]
+        return spaces.allSatisfy { essentials(of: $0) < Browser.essentialCap }
+    }
     /// Whether this tab is, or could become, an essential.
     func canMakeEssential(_ tab: Tab) -> Bool {
         if tab.pin != nil && !tab.listed { return true }
-        return essentialCount < Browser.essentialCap && !tab.shy
+        return essentialRoom(everywhere: tab.everywhere) && !tab.shy
     }
 
     /// Add to / Remove from Essentials. An unpinned tab is pinned as a square;
@@ -1653,6 +1667,8 @@ final class Browser: NSObject, ObservableObject {
     /// further than the line between them.
     func setListed(_ tab: Tab, _ listed: Bool) {
         guard tab.pin != nil, tab.listed != listed else { return }
+        // Full: it stays a row.
+        if !listed, !essentialRoom(everywhere: tab.everywhere) { return }
         objectWillChange.send()
         if editingPin == tab.id { editingPin = nil }
         tab.listed = listed
@@ -1742,11 +1758,13 @@ final class Browser: NSObject, ObservableObject {
             Pins.setShared(Pins.shared(profileID).filter { $0.id != id }, from: self)
             for space in Array(parked.keys) { pinsChanged(in: space) }
         }
+        let folder = tab.pinGroup
         tab.pin = nil
         tab.listed = false
         tab.pinGroup = nil
         tab.home = nil
         tab.pinID = nil
+        removeEmptyGroup(folder)
         defer { writeSession(now: true) }
         // Back out of the pinned block, to the head of the loose tabs.
         if let here = tabs.firstIndex(where: { $0.id == tab.id }) {
@@ -1795,6 +1813,8 @@ final class Browser: NSObject, ObservableObject {
         } else if tab.listed != listed {
             setListed(tab, listed)
         }
+        // A full grid took it as a row.
+        let listed = tab.listed
         let at = pinSlot(tab, listed: listed, proposed: slot)
         let pins = tabs.filter { $0.pin != nil }
         var tier = pins.filter { $0.listed == listed && $0.id != tab.id }
@@ -2357,7 +2377,7 @@ final class Browser: NSObject, ObservableObject {
         let saved = readRow(spaceID)
         // A folder lasts while a tab, a pin or a folder inside it does.
         let pinned = (Pins.defs(spaceID) + Pins.shared(profileID)).compactMap(\.group)
-        tabGroups = TabGroup.keeping(saved.groups ?? [], held: Set(saved.tabs.compactMap(\.groupID) + pinned))
+        tabGroups = TabGroup.keeping(TabGroup.sane(saved.groups ?? []), held: Set(saved.tabs.compactMap(\.groupID) + pinned))
         let restored = restoreRow(saved, space: spaceID, groups: tabGroups)
         splits = restored.splits
         tabs += restored.tabs
@@ -2642,7 +2662,7 @@ final class Browser: NSObject, ObservableObject {
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
                           title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
-                          essential: tab.listed ? false : nil, group: tab.pinGroup)
+                          group: tab.everywhere ? nil : tab.pinGroup)
         }
     }
 
@@ -2651,7 +2671,8 @@ final class Browser: NSObject, ObservableObject {
     /// pin new to this window, and the tab of a pin taken away closed. A
     /// pinned tab from before pins had ids is matched by letter and page,
     /// then by place.
-    func reconcilePins(_ row: [Tab], space: UUID) -> [Tab] {
+    func reconcilePins(_ row: [Tab], space: UUID, groups: [TabGroup]? = nil) -> [Tab] {
+        let folders = groups ?? (space == spaceID ? tabGroups : parked[space]?.groups ?? [])
         let showing = prefs.showsSharedPins
         let shared = showing ? Pins.shared(profileID) : []
         let sharedIDs = Set(shared.map(\.id))
@@ -2677,7 +2698,9 @@ final class Browser: NSObject, ObservableObject {
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
             if tab.listed != def.isListed { tab.listed = def.isListed }
-            if tab.pinGroup != def.group { tab.pinGroup = def.group }
+            // Only a folder this space has; a shared pin has none.
+            let folder = sharedIDs.contains(def.id) ? nil : def.group.flatMap { id in folders.contains { $0.id == id } ? id : nil }
+            if tab.pinGroup != folder { tab.pinGroup = folder }
             tab.home = URL(string: def.home)
             out.append(tab)
         }
@@ -2738,6 +2761,10 @@ final class Browser: NSObject, ObservableObject {
     /// the other spaces make theirs, asleep at the pin's page.
     func shareEverywhere(_ tab: Tab) {
         guard prefs.showsSharedPins, tab.pin != nil, !tab.everywhere, !tab.shy else { return }
+        // Every space would show it as a square: a row where one is full.
+        // And a folder is one space's.
+        if !tab.listed, !essentialRoom(everywhere: true) { setListed(tab, true) }
+        tab.pinGroup = nil
         writeSession(now: true)
         guard let id = tab.pinID else { return }
         let moved = Pins.share(id, own: Pins.defs(spaceID), shared: Pins.shared(profileID))
@@ -2837,8 +2864,11 @@ final class Browser: NSObject, ObservableObject {
             for favourite in favourites where !had.contains(where: { Browser.samePin($0, favourite.url) })
                 && !defs.contains(where: { $0.home == favourite.url.absoluteString }) {
                 let host = favourite.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                // Past the cap a favourite is a row, as a pin is anywhere.
+                let full = Pins.essentialCount(defs, Pins.shared(target.profile)) >= Browser.essentialCap
                 defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                                   home: favourite.url.absoluteString, title: favourite.title, name: nil))
+                                   home: favourite.url.absoluteString, title: favourite.title, name: nil,
+                                   listed: full ? true : nil))
                 pins += 1
                 brought.append(favourite.url)
             }
@@ -4356,7 +4386,10 @@ final class Browser: NSObject, ObservableObject {
         // in the tree, only this folder goes.
         let up = tabGroups.first { $0.id == id }?.parent
         for tab in tabs where tab.pinGroup == id { tab.pinGroup = up }
-        tabGroups = TabGroup.removing(id, from: tabGroups).groups
+        // And in pins.json, or another window writes the gone folder back.
+        let removed = TabGroup.removing(id, from: tabGroups, pins: Pins.defs(spaceID))
+        tabGroups = removed.groups
+        Pins.set(spaceID, removed.pins, from: self)
         arrangeGroupedTabs()
         if editingGroupID == id { editingGroupID = nil }
         writeSession(now: true)
@@ -4499,8 +4532,10 @@ final class Browser: NSObject, ObservableObject {
     private func removeEmptyGroup(_ id: UUID?) {
         guard let id, !tabs.contains(where: { $0.groupID == id || $0.pinGroup == id }),
               !tabGroups.contains(where: { $0.parent == id }) else { return }
+        let up = tabGroups.first { $0.id == id }?.parent
         tabGroups.removeAll { $0.id == id }
         if editingGroupID == id { editingGroupID = nil }
+        removeEmptyGroup(up)
     }
 
     /// The tabs as they are on screen: with groups on, the ones folded away
@@ -5136,7 +5171,8 @@ final class Browser: NSObject, ObservableObject {
     /// nothing until one is looked at (see Spaces.swift).
     func loadRow(_ space: UUID) -> Parked {
         let saved = readRow(space)
-        var restored = restoreRow(saved, space: space, groups: saved.groups ?? [])
+        let groups = TabGroup.sane(saved.groups ?? [])
+        var restored = restoreRow(saved, space: space, groups: groups)
         // As restoreSession has it: nothing in front after a fresh start, so
         // the space opens on an empty tab beside its pins (see enter); and a
         // tab whose place no longer reads falls to the first that isn't a pin.
@@ -5145,7 +5181,7 @@ final class Browser: NSObject, ObservableObject {
         } else if restored.active == nil {
             restored.active = restored.tabs.first { $0.pin == nil }?.id ?? restored.tabs.first?.id
         }
-        restored.groups = saved.groups
+        restored.groups = saved.groups.map { _ in groups }
         return restored
     }
 
@@ -5178,7 +5214,7 @@ final class Browser: NSObject, ObservableObject {
             bySavedIndex[savedIndex] = tab
         }
         let said = bySavedIndex[saved.active]?.id
-        row = reconcilePins(row, space: space)
+        row = reconcilePins(row, space: space, groups: groups)
         // Pairs, whether Split View is on or not: off, they wait, as groups
         // do. Each tab in one pair at most, and only a pair that still holds.
         var restoredSplits: [TabSplit] = []

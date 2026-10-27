@@ -26,18 +26,42 @@ struct PinDef: Codable, Equatable {
     /// pins file with no rows in it is written as it always was.
     var listed: Bool? = nil
     /// Essentials are the icon grid at the top; the other pins are rows.
-    /// That is `listed` seen from the other side, so the two are one fact:
-    /// nil means what `listed` says (a pins.json from before essentials has
-    /// squares, which are essentials, and rows, which are not), and
-    /// `essential == false` is a row even where `listed` was never written.
-    /// Migration: nothing to rewrite; old files decode as they always drew.
+    /// That is `listed` seen from the other side, so the two are one fact.
+    /// Only `listed` is kept: a row is `listed: true` (what builds before
+    /// essentials read too), an essential is nil. `essential` is read from a
+    /// file that has it and folded into `listed` on the way in, never
+    /// written, so equal pins are equal and sync sees one representation.
     var essential: Bool? = nil
     /// The folder (TabGroup.id) the pin sits in, if any. Optional, so a file
-    /// with no folders is written as before.
+    /// with no folders is written as before. Per space: a shared pin has none.
     var group: UUID? = nil
 
     var isListed: Bool { listed == true || essential == false }
     var isEssential: Bool { !isListed }
+
+    init(id: UUID, letter: String, home: String, title: String, name: String? = nil,
+         listed: Bool? = nil, essential: Bool? = nil, group: UUID? = nil) {
+        self.id = id
+        self.letter = letter
+        self.home = home
+        self.title = title
+        self.name = name
+        self.listed = listed == true || essential == false ? true : nil
+        self.essential = nil
+        self.group = group
+    }
+
+    private enum Keys: String, CodingKey { case id, letter, home, title, name, listed, essential, group }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(id: try c.decode(UUID.self, forKey: .id), letter: try c.decode(String.self, forKey: .letter),
+                  home: try c.decode(String.self, forKey: .home), title: try c.decode(String.self, forKey: .title),
+                  name: try c.decodeIfPresent(String.self, forKey: .name),
+                  listed: try c.decodeIfPresent(Bool.self, forKey: .listed),
+                  essential: try c.decodeIfPresent(Bool.self, forKey: .essential),
+                  group: try? c.decodeIfPresent(UUID.self, forKey: .group))
+    }
 }
 
 @MainActor
@@ -134,6 +158,11 @@ enum Pins {
     }
 
     // MARK: - the two lists, worked out
+
+    /// Squares a space shows: its own pins and its profile's shared ones, once each.
+    nonisolated static func essentialCount(_ own: [PinDef], _ shared: [PinDef]) -> Int {
+        Set((own + shared).filter(\.isEssential).map(\.id)).count
+    }
 
     /// A space's own pin, shown by every space from now on: at the end of
     /// the shared ones.
