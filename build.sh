@@ -126,6 +126,9 @@ mv "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
 # The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
 # and titles. The plist below points to it.
 cp Wayfinder.sdef "$APP/Contents/Resources/"
+# EasyList and EasyPrivacy as WebKit rules (Shield.swift).
+mkdir -p "$APP/Contents/Resources/Blocklists"
+cp Sources/Search/Blocklists/* "$APP/Contents/Resources/Blocklists/"
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
