@@ -260,6 +260,7 @@ struct Command: Identifiable {
         },
 
         Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },
+        Command("history.archive", "Archive…", .history, KeyCombo("a", shift: true)) { $0.archiving = true },
         Command("history.downloads", "Downloads…", .history, KeyCombo("j", shift: true)) { $0.hoarding = true },
         Command("history.clearData", "Clear Browsing Data…", .history, KeyCombo("delete", shift: true)) { $0.recallMode = .clearing },
         Command("history.clear", "Clear History", .history, nil) { $0.clearHistory() },

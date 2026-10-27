@@ -9,8 +9,8 @@ import Foundation
 // The file keeps everything in flat lists of an id followed by its object:
 // spaces, and items — a tab, a folder ("list"), or a container of items —
 // joined by parentID and childrenIds. A space names its containers the same
-// way, a label followed by an id: the "pinned" one is what we take; the
-// "unpinned" one is Arc's Today, which lives a day and is left behind.
+// way, a label followed by an id: the "pinned" one is what we take, folders
+// and all; the "unpinned" one is Arc's Today, whose pages come as tabs.
 //
 // Read as damaged files are: a folder is taken once and no deeper than 64,
 // only http and https addresses come, a password in one is dropped, and a
@@ -32,6 +32,9 @@ struct ArcSidebar: Equatable {
         var profile: String
         /// In Arc's order, folders kept as folders.
         var pinned: [Node]
+        /// Arc's Today (the "unpinned" container): the pages it was holding
+        /// for the day, folders opened out.
+        var today: [Item] = []
     }
     /// The icons at the top, shared by every space of their profile.
     var favorites: [Item]
@@ -131,8 +134,11 @@ enum Arc {
             let emoji = ((space["customInfo"] as? [String: Any])?["iconType"] as? [String: Any])?["emoji_v2"] as? String
             let pinned = container("pinned", in: space["newContainerIDs"] as? [Any])
                 ?? container("pinned", in: space["containerIDs"] as? [Any])
+            let today = container("unpinned", in: space["newContainerIDs"] as? [Any])
+                ?? container("unpinned", in: space["containerIDs"] as? [Any])
             spaces.append(.init(name: name, emoji: emoji, symbol: symbol(emoji: emoji, name: name), profile: profile,
-                                pinned: pinned.map { nodes(under: $0, depth: 0) } ?? []))
+                                pinned: pinned.map { nodes(under: $0, depth: 0) } ?? [],
+                                today: today.map { flat(nodes(under: $0, depth: 0)) } ?? []))
         }
 
         // The favourites: a profile followed by its container's id.
@@ -184,6 +190,16 @@ enum Arc {
     private static func named(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return String(trimmed.prefix(300))
+    }
+
+    /// Every page in a list of nodes, folders opened out in their order.
+    static func flat(_ nodes: [ArcSidebar.Node]) -> [ArcSidebar.Item] {
+        nodes.flatMap { node -> [ArcSidebar.Item] in
+            switch node {
+            case .item(let item): [item]
+            case .folder(let folder): flat(folder.items)
+            }
+        }
     }
 
     static func count(_ nodes: [ArcSidebar.Node]) -> Int {

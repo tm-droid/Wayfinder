@@ -273,12 +273,9 @@ struct SearchApp: App {
                 if let tab = browser.active {
                     let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        // A row, Arc's way; the square is Add to Essentials.
+                        Button("Pin Tab") { browser.pin(tab, listed: rows) }
                             .disabled(!tab.isWeb || tab.shy)
-                        if rows {
-                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
-                                .disabled(!tab.isWeb || tab.shy)
-                        }
                         Button("Add to Essentials") { browser.setEssential(tab, true) }
                             .disabled(!tab.isWeb || !browser.canMakeEssential(tab))
                     } else {
@@ -352,6 +349,8 @@ struct SearchApp: App {
                 Divider()
                 Button("Show History…") { browser.recalling = true }
                     .shortcut("history.show")
+                Button("Archive…") { browser.archiving = true }
+                    .shortcut("history.archive")
                 Button("Downloads…") { browser.hoarding = true }
                     .shortcut("history.downloads")
                 Divider()

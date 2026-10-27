@@ -20,6 +20,8 @@ enum PinDrop {
         case loose(Int)
         /// Into a group, over its heading.
         case group(UUID)
+        /// Into a folder as a pinned row, over its heading (pinned rows on).
+        case folder(UUID)
     }
 
     /// The tab being carried and where it would land: what the column

@@ -1243,12 +1243,8 @@ struct TabMenu: View {
         }
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
+            Button("Pin") { browser.pin(tab, listed: rows) }
                 .disabled(!tab.isWeb || tab.shy)
-            if rows {
-                Button("Pin as Row") { browser.pin(tab, listed: true) }
-                    .disabled(!tab.isWeb || tab.shy)
-            }
             Button("Add to Essentials") { browser.setEssential(tab, true) }
                 .disabled(!tab.isWeb || !browser.canMakeEssential(tab))
         } else {

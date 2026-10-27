@@ -81,6 +81,7 @@ extension Browser {
         guard closeAfter != nil,
               together.allSatisfy({ $0.leftSince <= since && stays(because: $0) == nil }) else { return }
         for tab in together {
+            Archive.shared.keep(tab)
             if tabs.contains(where: { $0 === tab }) {
                 close(tab)
             } else {

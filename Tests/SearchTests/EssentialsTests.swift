@@ -46,6 +46,13 @@ final class EssentialsTests: XCTestCase {
         return tab
     }
 
+    /// Pinned rows on, for what the sidebar shows of them.
+    private func rowsOn(_ browser: Browser) {
+        let was = (browser.prefs.listsPins, browser.prefs.sidebar)
+        (browser.prefs.listsPins, browser.prefs.sidebar) = (true, true)
+        addTeardownBlock { @MainActor in (browser.prefs.listsPins, browser.prefs.sidebar) = was }
+    }
+
     private func full(_ browser: Browser) {
         for n in 0..<Browser.essentialCap { _ = pin(browser, n) }
     }
@@ -259,6 +266,66 @@ final class EssentialsTests: XCTestCase {
         XCTAssertTrue(def.isListed)
         XCTAssertEqual(def.listed, true)
         XCTAssertNil(def.essential)
+    }
+
+    // MARK: folders in the sidebar
+
+    func testFolderRowsNestByDepthAndFoldedHidesDescendants() {
+        let browser = window()
+        rowsOn(browser)
+        let tab = pin(browser, 1, listed: true)
+        var top = group(), mid = group(top.id)
+        let other = group()
+        browser.tabGroups = [top, mid, other]
+        browser.setPinGroup(tab, mid.id)
+        var rows = browser.folderRows(tabsOn: false, pinsOn: true)
+        XCTAssertEqual(rows.map(\.group.id), [top.id, mid.id])
+        XCTAssertEqual(rows.map(\.depth), [1, 2])
+        // The empty folder shows only where groups are on.
+        XCTAssertEqual(browser.folderRows(tabsOn: true, pinsOn: true).map(\.group.id), [top.id, mid.id, other.id])
+        top.collapsed = true
+        browser.tabGroups = [top, mid, other]
+        rows = browser.folderRows(tabsOn: false, pinsOn: true)
+        XCTAssertEqual(rows.map(\.group.id), [top.id])
+        mid.collapsed = false
+        XCTAssertEqual(browser.folderPins(mid.id).map(\.id), [tab.id])
+        XCTAssertTrue(browser.rowPins.isEmpty)
+    }
+
+    func testDroppingOnAFolderPinsAsARowThereAndOutOfItAMovesItUp() {
+        let browser = window()
+        let folder = group()
+        browser.tabGroups = [folder]
+        let loose = plain(browser, 1)
+        XCTAssertTrue(browser.pinDropped(loose, into: folder.id))
+        XCTAssertTrue(loose.listed)
+        XCTAssertEqual(loose.pinGroup, folder.id)
+        XCTAssertEqual(Pins.defs(browser.spaceID).first?.group, folder.id)
+        // Dropped among the rows: out of the folder, which goes with its last pin.
+        XCTAssertTrue(browser.pinDropped(loose, listed: true, at: 0))
+        XCTAssertNil(loose.pinGroup)
+        XCTAssertTrue(browser.tabGroups.isEmpty)
+        // An essential dropped on a folder becomes a row in it.
+        let square = pin(browser, 2)
+        let again = group()
+        browser.tabGroups = [again]
+        XCTAssertTrue(browser.pinDropped(square, into: again.id))
+        XCTAssertTrue(square.listed)
+        XCTAssertEqual(square.pinGroup, again.id)
+    }
+
+    func testPinnedRowSlotIgnoresRowsInFolders() {
+        let browser = window()
+        rowsOn(browser)
+        let folder = group()
+        browser.tabGroups = [folder]
+        let inside = pin(browser, 1, listed: true)
+        let first = pin(browser, 2, listed: true), second = pin(browser, 3, listed: true)
+        browser.setPinGroup(inside, folder.id)
+        let drop = plain(browser, 4)
+        XCTAssertTrue(browser.pinDropped(drop, listed: true, at: 1))
+        let order = browser.rowPins.map(\.id)
+        XCTAssertEqual(order, [first.id, drop.id, second.id])
     }
 
     // MARK: drift

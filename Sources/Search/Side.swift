@@ -428,7 +428,10 @@ struct SideBar: View {
         let ungrouped = displayed.filter { $0.pin == nil && (!prefs.usesTabGroups || browser.group(of: $0) == nil) }.count
         let listBlock = CGFloat(listed) * (rowHeight + SideBar.gap) + (listed > 0 ? SideBar.gap : 0)
             + (showsLine(kept: keptCount, listed: listed, loose: ungrouped) ? KeepLine.height + SideBar.gap : 0)
-        let grouped = prefs.usesTabGroups ? browser.tabGroups.map { browser.visibleTabs(in: $0) } : []
+        let shown = prefs.usesTabGroups || prefs.showsPinRows ? browser.folderRows(tabsOn: prefs.usesTabGroups, pinsOn: prefs.showsPinRows) : []
+        let grouped = prefs.usesTabGroups ? shown.map { browser.visibleTabs(in: $0.group) } : shown.map { _ in [Tab]() }
+        // The pinned rows in folders are rows too.
+        let folded = CGFloat(shown.filter { !$0.group.collapsed }.reduce(0) { $0 + (prefs.showsPinRows ? browser.folderPins($1.group.id).count : 0) })
         let rows = prefs.usesTabGroups
             ? displayed.filter { $0.pin == nil && browser.group(of: $0) == nil } + grouped.flatMap { $0 }
             : displayed.filter { $0.pin == nil }
@@ -440,6 +443,7 @@ struct SideBar: View {
         let headings = CGFloat(grouped.count) * (heading + SideBar.gap)
             + CGFloat(grouped.filter(\.isEmpty).count) * SideBar.gap
         let loose = CGFloat(rows.count) * (rowHeight + SideBar.gap) + CGFloat(pairs) * rowHeight + headings
+            + folded * (rowHeight + SideBar.gap)
         return listBlock + loose + rowHeight + 8
     }
 
@@ -496,7 +500,7 @@ struct SideBar: View {
 
     /// What stands above the line in this space: its pins and its groups.
     private var keptCount: Int {
-        browser.squarePins.count + browser.listedPins.count + (prefs.usesTabGroups ? browser.tabGroups.count : 0)
+        browser.squarePins.count + browser.listedPins.count + (prefs.usesTabGroups || prefs.showsPinRows ? browser.tabGroups.count : 0)
     }
 
     /// How many squares go in each row: at most four — fewer only when the
@@ -584,8 +588,7 @@ struct SideBar: View {
     /// The pins kept as rows, under the squares: Arc's pinned list. Each is
     /// a row like any other to look at, carried only among its own kind.
     private var listed: some View {
-        let pins = browser.listedPins
-        let squares = browser.squarePins.count
+        let pins = browser.rowPins
         let ghost: Int? = if case .listed(let at)? = crossing?.target { at } else { nil }
         return VStack(spacing: SideBar.gap) {
             ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
@@ -608,7 +611,7 @@ struct SideBar: View {
                                       space: "listed",
                                       cross: { cross(tab, $0, from: .listed) },
                                       land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
-                        browser.moveDisplayedTab(tab, to: $0 + squares)
+                        browser.movePin(tab, to: $0, among: pins)
                     })
             }
             if let ghost, ghost >= pins.count, let carried = crossingTab {
@@ -622,10 +625,13 @@ struct SideBar: View {
 
     private var loose: some View {
         VStack(spacing: SideBar.gap) {
-            if prefs.usesTabGroups {
-                ForEach(browser.tabGroups) { group in
-                    GroupHeading(browser: browser, group: group, dragSpace: "rows", compact: icons)
-                    groupRows(group)
+            // Folders inside folders, each indented under the one above it;
+            // a folded folder hides all it holds.
+            if prefs.usesTabGroups || prefs.showsPinRows {
+                ForEach(browser.folderRows(tabsOn: prefs.usesTabGroups, pinsOn: prefs.showsPinRows), id: \.group.id) { row in
+                    GroupHeading(browser: browser, group: row.group, dragSpace: "rows", compact: icons)
+                        .padding(.leading, icons ? 0 : CGFloat(row.depth - 1) * 14)
+                    groupRows(row.group, depth: row.depth)
                 }
             }
             // See the grid: the drag is measured in the column's space, not
@@ -636,7 +642,7 @@ struct SideBar: View {
             // Under the groups: Clear keeps them, as it keeps the pins, so
             // everything above the line is what stays.
             if showsLine(kept: keptCount, listed: browser.listedPins.count, loose: loose.count) {
-                KeepLine(clears: !loose.isEmpty) { browser.clearTabs() }
+                KeepLine(clears: !loose.isEmpty, act: { browser.clearTabs() }, archive: { browser.archiving = true })
             }
             let ghost: Int? = if case .loose(let at)? = crossing?.target { at } else { nil }
             // In a stack of their own, measured, for where a pin carried
@@ -688,14 +694,34 @@ struct SideBar: View {
         if let target = destination(tab, at: point) { browser.move(tab, toGroup: target) }
     }
 
-    private func groupRows(_ group: TabGroup) -> some View {
-        let members = browser.visibleTabs(in: group)
+    private func groupRows(_ group: TabGroup, depth: Int = 1) -> some View {
+        let members = prefs.usesTabGroups ? browser.visibleTabs(in: group) : []
+        let pins = prefs.showsPinRows && !group.collapsed ? browser.folderPins(group.id) : []
+        let indent = icons ? 0 : CGFloat(depth) * 14
         return VStack(spacing: SideBar.gap) {
+            // Pinned rows come first in a folder, as under the squares.
+            ForEach(Array(pins.enumerated()), id: \.element.id) { index, tab in
+                Group {
+                    if icons {
+                        IconTile(browser: browser, prefs: prefs, tab: tab, live: tab.id == browser.activeID,
+                                 pill: pill, close: { browser.close(tab) })
+                    } else {
+                        SideRow(browser: browser, prefs: prefs, tab: tab, live: tab.id == browser.activeID,
+                                pill: pill, close: { browser.close(tab) })
+                    }
+                }
+                .padding(.leading, indent)
+                .modifier(Carried(index: index, count: pins.count, step: rowHeight + SideBar.gap, vertical: true,
+                                  space: "rows", cross: { cross(tab, $0, from: .rows) },
+                                  land: { land(tab, $0) }, faded: crossing?.tab == tab.id) {
+                    browser.movePin(tab, to: $0, among: pins)
+                })
+            }
             ForEach(Array(members.enumerated()), id: \.element.id) { index, tab in
                 rowItem(tab, tabs: browser.tabs, splits: browser.splits,
                         activeID: browser.activeID, interactive: true, pill: pill,
                         close: { browser.closeTab(tab) })
-                    .padding(.leading, icons ? 0 : 14)
+                    .padding(.leading, indent)
                     .modifier(Carried(index: index, count: members.count,
                                       step: rowHeight + SideBar.gap, vertical: true,
                                       space: "rows", onDropTab: { source, point in drop(source, at: point) },
@@ -707,9 +733,9 @@ struct SideBar: View {
                     })
             }
             // A pin carried over its heading goes in at the end.
-            if crossing?.target == .group(group.id), let carried = crossingTab {
+            if crossing?.target == .group(group.id) || crossing?.target == .folder(group.id), let carried = crossingTab {
                 RowGhost(tab: carried, height: rowHeight, size: prefs.sideTitle)
-                    .padding(.leading, icons ? 0 : 14)
+                    .padding(.leading, indent)
             }
         }
         // With icons only, the group's tiles held by a thin bracket in the
@@ -758,7 +784,7 @@ struct SideBar: View {
         let squares = browser.squarePins.filter { $0.id != tab.id }
         let gridShown = !squares.isEmpty || ghostSquare != nil
         let rowsOn = prefs.showsPinRows
-        let listedShown = rowsOn && (!browser.listedPins.isEmpty || isListedGhost)
+        let listedShown = rowsOn && (!browser.rowPins.isEmpty || isListedGhost)
         let zone = PinDrop.zone(point, width: prefs.columnWidth - 20,
                                 gridBottom: gridShown ? frames.grid?.maxY : nil,
                                 listed: listedShown ? frames.listed : nil)
@@ -768,21 +794,35 @@ struct SideBar: View {
         case .squares:
             let takes = tab.pin == nil ? browser.pinsByDrag(tab) : (rowsOn && tab.listed)
             guard takes else { return nil }
+            // Full, it lands as a row: no ghost square.
+            if !browser.essentialRoom(everywhere: tab.everywhere) {
+                return rowsOn ? .listed(browser.rowPins.filter { $0.id != tab.id }.count) : nil
+            }
             let origin = gridShown ? frames.grid?.origin ?? .zero : .zero
             let slot = PinDrop.gridSlot(CGPoint(x: point.x - origin.x, y: point.y - origin.y),
                                         cells: pinCells(squares.count + 1))
             return .squares(browser.pinSlot(tab, listed: false, proposed: slot))
         case .listed:
-            let takes = tab.pin == nil ? browser.pinsByDrag(tab) : !tab.listed
+            let takes = tab.pin == nil ? browser.pinsByDrag(tab) : (!tab.listed || browser.folderExists(tab.pinGroup))
             guard takes, let listed = frames.listed else { return nil }
-            let rows = browser.listedPins.filter { $0.id != tab.id }
+            let rows = browser.rowPins.filter { $0.id != tab.id }
             let ghost: (Int, CGFloat)? = if case .listed(let at)? = crossing?.target { (at, rowHeight) } else { nil }
             let slot = PinDrop.rowSlot(y: point.y - listed.minY, heights: rows.map { _ in rowHeight },
                                        gap: SideBar.gap, ghost: ghost)
             return .listed(browser.pinSlot(tab, listed: true, proposed: slot))
         case .loose:
-            guard tab.pin != nil else { return nil }
             let inRows = CGPoint(x: point.x - frames.rows.minX, y: point.y - frames.rows.minY)
+            // A pin over a folder's heading goes in as a row (an ordinary
+            // tab too, where groups are off and folders hold only pins).
+            if rowsOn, tab.pin != nil || (!prefs.usesTabGroups && browser.pinsByDrag(tab)),
+               let id = groupFrames.values.first(where: { $0.tab == nil && $0.rect.contains(inRows) })?.group,
+               id != tab.pinGroup {
+                return .folder(id)
+            }
+            guard tab.pin != nil else { return nil }
+            // Among its own folder's rows it only reorders; past them, in
+            // Today, it is let out.
+            if browser.folderExists(tab.pinGroup), point.y < (frames.loose?.minY ?? frames.rows.maxY) { return nil }
             if prefs.usesTabGroups, let id = groupFrames.values.first(where: { $0.rect.contains(inRows) })?.group {
                 return .group(id)
             }
@@ -828,6 +868,7 @@ struct SideBar: View {
             case .listed(let at): browser.pinDropped(tab, listed: true, at: at)
             case .loose(let at): browser.unpinDropped(tab, at: at)
             case .group(let id): browser.unpinDropped(tab, at: 0, group: id)
+            case .folder(let id): browser.pinDropped(tab, into: id)
             }
         }
         return true
@@ -1333,6 +1374,9 @@ struct KeepLine: View {
     /// Whether there is anything under it to clear.
     let clears: Bool
     let act: () -> Void
+    /// Opens the archive of tabs let go (Archive.swift); on a hover, and in
+    /// the line's menu.
+    var archive: (() -> Void)? = nil
 
     @State private var hovering = false
 
@@ -1356,10 +1400,22 @@ struct KeepLine: View {
                 .help("Close the tabs under the line. Pins and groups stay; ⇧⌘T brings them all back.")
                 .transition(.opacity)
             }
+            if let archive, hovering {
+                Button(action: archive) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Palette.muted)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Archive: tabs closed by the clock or by Clear, for 30 days   ⇧⌘A")
+                .transition(.opacity)
+            }
         }
         .padding(.horizontal, 10)
         .frame(height: KeepLine.height)
         .contentShape(Rectangle())
+        .contextMenu { if let archive { Button("Open Archive", action: archive) } }
         .onHover { hovering = $0 }
         .onAppear { if Store.testing { KeepLine.drawn += 1 } }
         .onDisappear { if Store.testing { KeepLine.drawn -= 1 } }

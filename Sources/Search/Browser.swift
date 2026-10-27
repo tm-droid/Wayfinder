@@ -1415,6 +1415,11 @@ final class Browser: NSObject, ObservableObject {
         get { pageTab(.downloads) != nil }
         set { if newValue { show(InternalPage(.downloads)) } else { putAway(.downloads) } }
     }
+    /// The tabs let go in the last 30 days (see Archive.swift), in a tab.
+    var archiving: Bool {
+        get { pageTab(.archive) != nil }
+        set { if newValue { show(InternalPage(.archive)) } else { putAway(.archive) } }
+    }
     @Published var recallHunt = ""
 
     /// Cookies, caches, local storage — everything a site left on this Mac,
@@ -1815,10 +1820,18 @@ final class Browser: NSObject, ObservableObject {
         }
         // A full grid took it as a row.
         let listed = tab.listed
+        // Among the squares or the rows, so out of any folder.
+        if let old = tab.pinGroup {
+            tab.pinGroup = nil
+            removeEmptyGroup(old)
+        }
         let at = pinSlot(tab, listed: listed, proposed: slot)
         let pins = tabs.filter { $0.pin != nil }
         var tier = pins.filter { $0.listed == listed && $0.id != tab.id }
-        tier.insert(tab, at: min(at, tier.count))
+        // The slot counts the rows in no folder; the folders' are among them.
+        let top = tier.filter { !folderExists($0.pinGroup) }
+        let spot = listed ? (at < top.count ? tier.firstIndex { $0.id == top[at].id } ?? tier.count : tier.count) : min(at, tier.count)
+        tier.insert(tab, at: spot)
         let squares = listed ? pins.filter { !$0.listed } : tier
         let rows = listed ? tier : pins.filter(\.listed)
         let row = squares + rows + tabs.filter { $0.pin == nil }
@@ -2872,35 +2885,40 @@ final class Browser: NSObject, ObservableObject {
                 pins += 1
                 brought.append(favourite.url)
             }
-            let pinned = Browser.opened(target.space?.pinned ?? [])
-            brought += pinned.map(\.item.url)
-            // Arc's pinned list, split the way Arc itself holds it. A page it
-            // keeps loose is a page you keep, which is what a row is for, so
-            // it comes in as one. A page it filed in a folder stays a tab in a
-            // group of that name, because a pin is never in a group and the
-            // folder is the thing that would be lost (see #478). With rows off
-            // nothing is split: the whole list comes in as tabs, as before.
-            let rows = prefs.listsPins ? pinned.filter { $0.folder == nil } : []
-            for page in rows where !had.contains(where: { Browser.samePin($0, page.item.url) })
-                && !defs.contains(where: { $0.home == page.item.url.absoluteString }) {
-                let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
-                defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
-                                   home: page.item.url.absoluteString, title: page.item.title,
-                                   name: nil, listed: true))
-                pins += 1
+            // With rows on, Arc's pinned list comes in as Arc holds it: a page
+            // it keeps loose is a row, a page in a folder a row in a folder of
+            // that name, folders inside folders kept to three deep (deeper
+            // ones are flattened into the third). With rows off nothing is
+            // split: the whole list comes in as tabs, a group to its top
+            // folder, as before.
+            let rowsOn = prefs.listsPins
+            let pinned = Browser.opened(target.space?.pinned ?? [], depth: rowsOn ? TabGroup.maxDepth : 1)
+            let today = (target.space?.today ?? []).map { (item: $0, folder: [String]()) }
+            brought += pinned.map(\.item.url) + today.map(\.item.url)
+            // Whose window holds that space's row: this one, another profile's
+            // (its oldest), or none, and the session file is written.
+            var host: Browser? = self
+            var files = false
+            if target.profile != profileID {
+                host = Browsers.all.first { $0.profileID == target.profile && $0.usesFiles }
+                files = host == nil
+                host = host ?? self
+            }
+            if rowsOn {
+                let folders = host?.arcFolders(Set(pinned.map(\.folder).filter { !$0.isEmpty }), in: target.id, files: files) ?? [:]
+                for page in pinned where !had.contains(where: { Browser.samePin($0, page.item.url) })
+                    && !defs.contains(where: { $0.home == page.item.url.absoluteString }) {
+                    let host = page.item.url.host()?.replacingOccurrences(of: "www.", with: "") ?? ""
+                    defs.append(PinDef(id: UUID(), letter: host.first.map { String($0).uppercased() } ?? "•",
+                                       home: page.item.url.absoluteString, title: page.item.title,
+                                       name: nil, listed: true, group: folders[page.folder]))
+                    pins += 1
+                }
             }
             Pins.set(target.id, defs, from: self)
-            let pages = rows.isEmpty ? pinned : pinned.filter { $0.folder != nil }
-            if target.profile == profileID {
-                pinsChanged(in: target.id)
-                added += takeAsleep(pages, into: target.id)
-            } else if let owner = Browsers.all.first(where: { $0.profileID == target.profile && $0.usesFiles }) {
-                // Another profile's window holds that space's row.
-                owner.pinsChanged(in: target.id)
-                added += owner.takeAsleep(pages, into: target.id)
-            } else {
-                added += takeAsleep(pages, into: target.id, files: true)
-            }
+            let pages = (rowsOn ? [] : pinned) + today
+            if !files { host?.pinsChanged(in: target.id) }
+            added += host?.takeAsleep(pages, into: target.id, files: files) ?? 0
         }
         adoptIcons(for: brought, from: source, profile: profile)
         return (made, pins, added)
@@ -2955,14 +2973,59 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// Arc's pinned list, folders opened out in their order, each page with
-    /// the top folder it came from: a tab group's name, when groups are on.
-    private static func opened(_ nodes: [ArcSidebar.Node], in folder: String? = nil) -> [(item: ArcSidebar.Item, folder: String?)] {
-        nodes.flatMap { node -> [(item: ArcSidebar.Item, folder: String?)] in
+    /// the folders it sits in, outermost first: no more than `depth`, the
+    /// ones below that flattened into the last.
+    static func opened(_ nodes: [ArcSidebar.Node], depth: Int = TabGroup.maxDepth, in folder: [String] = [])
+        -> [(item: ArcSidebar.Item, folder: [String])] {
+        nodes.flatMap { node -> [(item: ArcSidebar.Item, folder: [String])] in
             switch node {
             case .item(let item): [(item, folder)]
-            case .folder(let inner): opened(inner.items, in: folder ?? inner.title)
+            case .folder(let inner): opened(inner.items, depth: depth, in: folder.count < depth ? folder + [inner.title] : folder)
             }
         }
+    }
+
+    /// The folders of an Arc import in a space, made where they are missing
+    /// (a folder of that name inside the same parent is the one there), by
+    /// path. In the row on screen, a parked one, or the file of a space no
+    /// window holds, as takeAsleep keeps its groups.
+    func arcFolders(_ paths: Set<[String]>, in space: UUID, files: Bool = false) -> [[String]: UUID] {
+        var groups: [TabGroup]
+        var saved: Session.Shape?
+        if space == spaceID && !files { groups = tabGroups }
+        else if !files, let row = parked[space] { groups = row.groups ?? readRow(space).groups ?? [] }
+        else { saved = readRow(space); groups = saved?.groups ?? [] }
+        let before = groups
+        var made: [[String]: UUID] = [:]
+        for path in paths.sorted(by: { $0.count < $1.count || ($0.count == $1.count && $0.lexicographicallyPrecedes($1)) }) {
+            var parent: UUID?
+            for depth in 1...path.count {
+                let key = Array(path.prefix(depth))
+                if let known = made[key] { parent = known; continue }
+                let id = groups.first { $0.name == key[depth - 1] && $0.parent == parent }?.id ?? {
+                    let group = TabGroup(id: UUID(), name: key[depth - 1], collapsed: false, parent: parent)
+                    groups.append(group)
+                    return group.id
+                }()
+                made[key] = id
+                parent = id
+            }
+        }
+        guard groups != before else { return made }
+        if space == spaceID && !files {
+            tabGroups = groups
+            arrangeGroupedTabs()
+        } else if var row = parked[space], !files {
+            row.groups = groups
+            parked[space] = row
+            var onDisk = readRow(space)
+            onDisk.groups = groups
+            writeRow(space, onDisk, now: true)
+        } else if var onDisk = saved {
+            onDisk.groups = groups
+            writeRow(space, onDisk, now: true)
+        }
+        return made
     }
 
     /// Pages as tabs at the end of a space's row, asleep: the row on
@@ -2972,14 +3035,14 @@ final class Browser: NSObject, ObservableObject {
     /// off, the folders stay opened out. Groups are never turned on here.
     /// `files`: a space of another profile no window is in, its row written
     /// straight into the profile's session file.
-    private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: String?)], into space: UUID, files: Bool = false) -> Int {
+    private func takeAsleep(_ items: [(item: ArcSidebar.Item, folder: [String])], into space: UUID, files: Bool = false) -> Int {
         func asleep(_ item: ArcSidebar.Item) -> Tab {
             let tab = Tab(configuration: Web.configuration(space: space))
             prepare(tab)
             tab.restore(url: item.url, title: item.title)
             return tab
         }
-        func fresh(_ have: [String]) -> [(item: ArcSidebar.Item, folder: String?)] {
+        func fresh(_ have: [String]) -> [(item: ArcSidebar.Item, folder: [String])] {
             var seen = Set(have)
             return items.filter { seen.insert($0.item.url.absoluteString).inserted }
         }
@@ -2988,12 +3051,15 @@ final class Browser: NSObject, ObservableObject {
         /// them (see Session.Shape.groups): a folder Arc had is a name this
         /// import is the only chance to learn, and turning groups on later
         /// finds it waiting rather than gone.
-        func group(_ folder: String?, in groups: inout [TabGroup]) -> UUID? {
-            guard let folder else { return nil }
-            if let same = groups.first(where: { $0.name == folder }) { return same.id }
-            let made = TabGroup(id: UUID(), name: folder, collapsed: false)
-            groups.append(made)
-            return made.id
+        func group(_ folder: [String], in groups: inout [TabGroup]) -> UUID? {
+            var parent: UUID?
+            for name in folder {
+                if let same = groups.first(where: { $0.name == name && $0.parent == parent }) { parent = same.id; continue }
+                let made = TabGroup(id: UUID(), name: name, collapsed: false, parent: parent)
+                groups.append(made)
+                parent = made.id
+            }
+            return parent
         }
         if files {
             var saved = Session.read(space: space)
@@ -3893,6 +3959,7 @@ final class Browser: NSObject, ObservableObject {
 
     private func clear(_ going: [Tab], batch: UUID) {
         lastClear = (batch, nil)
+        for tab in going { Archive.shared.keep(tab) }
         for tab in going where !visibleTabIDs.contains(tab.id) { close(tab) }
         let onScreen = going.filter { visibleTabIDs.contains($0.id) }
         // Already an empty tab in front: that is where Clear leaves you.
@@ -4339,6 +4406,62 @@ final class Browser: NSObject, ObservableObject {
         tabGroups[at].parent = parent
         writeSession(now: true)
         return true
+    }
+
+    /// A folder holds a pin only where the folder is this space's.
+    func folderExists(_ id: UUID?) -> Bool { id != nil && tabGroups.contains { $0.id == id } }
+    /// The pin rows in no folder: the ones drawn under the squares.
+    var rowPins: [Tab] { listedPins.filter { !folderExists($0.pinGroup) } }
+    /// The pin rows in a folder, in their order.
+    func folderPins(_ id: UUID) -> [Tab] { listedPins.filter { $0.pinGroup == id } }
+
+    /// Folders as the column draws them, depth first from the top (depth 1):
+    /// none under a folded one. A folder shows while it, or one inside it,
+    /// holds what shows: pins with the rows on, tabs with groups on (with
+    /// groups on every folder shows, as it always did).
+    func folderRows(tabsOn: Bool, pinsOn: Bool) -> [(group: TabGroup, depth: Int)] {
+        func holds(_ id: UUID, _ steps: Int = 0) -> Bool {
+            tabs.contains { (tabsOn && $0.pin == nil && $0.groupID == id) || (pinsOn && $0.pin != nil && $0.pinGroup == id) }
+                || (steps < TabGroup.maxDepth && tabGroups.contains { $0.parent == id && holds($0.id, steps + 1) })
+        }
+        var out: [(group: TabGroup, depth: Int)] = []
+        func walk(_ parent: UUID?, _ depth: Int) {
+            for group in tabGroups where group.parent == parent || (parent == nil && !folderExists(group.parent)) {
+                guard depth <= TabGroup.maxDepth, tabsOn || holds(group.id) else { continue }
+                out.append((group, depth))
+                if !group.collapsed { walk(group.id, depth + 1) }
+            }
+        }
+        walk(nil, 1)
+        return out
+    }
+
+    /// A pin carried to a folder's heading (or an ordinary tab, with groups
+    /// off): a row in that folder, pinned first if it was not.
+    @discardableResult
+    func pinDropped(_ tab: Tab, into folder: UUID) -> Bool {
+        guard folderExists(folder) else { return false }
+        let old = tab.pinGroup
+        if tab.pin == nil {
+            guard pinsByDrag(tab) else { return false }
+            // Set first: pinning takes it out of its group, which may go with it.
+            tab.pinGroup = folder
+            pin(tab, listed: true)
+            guard tab.pin != nil else { tab.pinGroup = nil; return false }
+        } else if !tab.listed {
+            setListed(tab, true)
+            guard tab.listed else { return false }
+        }
+        setPinGroup(tab, folder)
+        removeEmptyGroup(old)
+        writeSession(now: true)
+        return true
+    }
+
+    /// A pin row moved to the place of the one at `index` among `peers`.
+    func movePin(_ tab: Tab, to index: Int, among peers: [Tab]) {
+        guard peers.indices.contains(index), let at = displayedTabs.firstIndex(where: { $0.id == peers[index].id }) else { return }
+        moveDisplayedTab(tab, to: at)
     }
 
     /// A pin into a folder, or out of it (nil).
