@@ -1602,6 +1602,51 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    /// Essentials a space shows at most, its shared ones included: more would
+    /// be a wall of icons, not a row of favourites.
+    static let essentialCap = 12
+    var essentialCount: Int { tabs.filter { $0.pin != nil && !$0.shy && !$0.listed }.count }
+    /// Whether this tab is, or could become, an essential.
+    func canMakeEssential(_ tab: Tab) -> Bool {
+        if tab.pin != nil && !tab.listed { return true }
+        return essentialCount < Browser.essentialCap && !tab.shy
+    }
+
+    /// Add to / Remove from Essentials. An unpinned tab is pinned as a square;
+    /// a row becomes a square; an essential becomes a row. False when the cap
+    /// refuses, or the tab can't be a pin.
+    @discardableResult
+    func setEssential(_ tab: Tab, _ on: Bool) -> Bool {
+        if on {
+            guard canMakeEssential(tab) else { return false }
+            if tab.pin == nil {
+                pin(tab)
+                return tab.pin != nil
+            }
+            setListed(tab, false)
+        } else {
+            guard tab.pin != nil else { return false }
+            setListed(tab, true)
+        }
+        return true
+    }
+
+    /// What a pin is called: the name it was given, else its site.
+    func pinTitle(_ tab: Tab) -> String {
+        if let name = tab.name, !name.isEmpty { return name }
+        let host = tab.home?.host() ?? ""
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    /// A pin that has wandered from its home (Yab's pinned URLs): its title,
+    /// then the page it is on now. Nil while it is at home, or has no page
+    /// title to add. Back to the pin is goHome.
+    func drift(of tab: Tab) -> String? {
+        guard tab.pin != nil, let home = tab.home, !Browser.samePage(home, tab.address) else { return nil }
+        let now = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return now.isEmpty ? nil : pinTitle(tab) + " / " + now
+    }
+
     /// A square made a row, or a row a square: it keeps its letter, its
     /// page and its home, and moves to the nearer end of its new kind (the
     /// top of the rows, or the end of the squares), so it travels no
@@ -1699,6 +1744,7 @@ final class Browser: NSObject, ObservableObject {
         }
         tab.pin = nil
         tab.listed = false
+        tab.pinGroup = nil
         tab.home = nil
         tab.pinID = nil
         defer { writeSession(now: true) }
@@ -2309,9 +2355,9 @@ final class Browser: NSObject, ObservableObject {
     /// space has them too, before an empty tab.
     func restoreSession() {
         let saved = readRow(spaceID)
-        tabGroups = (saved.groups ?? []).filter { group in
-            saved.tabs.contains { $0.groupID == group.id }
-        }
+        // A folder lasts while a tab, a pin or a folder inside it does.
+        let pinned = (Pins.defs(spaceID) + Pins.shared(profileID)).compactMap(\.group)
+        tabGroups = TabGroup.keeping(saved.groups ?? [], held: Set(saved.tabs.compactMap(\.groupID) + pinned))
         let restored = restoreRow(saved, space: spaceID, groups: tabGroups)
         splits = restored.splits
         tabs += restored.tabs
@@ -2595,7 +2641,8 @@ final class Browser: NSObject, ObservableObject {
             if tab.pinID == nil { tab.pinID = UUID() }
             return PinDef(id: tab.pinID ?? UUID(), letter: letter,
                           home: (tab.home ?? tab.pending ?? tab.address)?.absoluteString ?? "",
-                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil)
+                          title: tab.title, name: tab.name, listed: tab.listed ? true : nil,
+                          essential: tab.listed ? false : nil, group: tab.pinGroup)
         }
     }
 
@@ -2629,7 +2676,8 @@ final class Browser: NSObject, ObservableObject {
             tab.everywhere = sharedIDs.contains(def.id)
             if tab.pin != def.letter { tab.pin = def.letter }
             if tab.name != def.name { tab.name = def.name }
-            if tab.listed != (def.listed == true) { tab.listed = def.listed == true }
+            if tab.listed != def.isListed { tab.listed = def.isListed }
+            if tab.pinGroup != def.group { tab.pinGroup = def.group }
             tab.home = URL(string: def.home)
             out.append(tab)
         }
@@ -3083,9 +3131,7 @@ final class Browser: NSObject, ObservableObject {
         if let id, let at = tabs.firstIndex(where: { $0.id == id }), indices[id] == nil {
             active = tabs[at].isBlank && !tabs[at].shy ? -1 : max(0, tabs[..<at].filter(kept).count - 1)
         }
-        let keptGroups = groups?.filter { group in
-            entries.contains { $0.groupID == group.id }
-        }
+        let keptGroups = groups.map { TabGroup.keeping($0, held: Set(entries.compactMap(\.groupID) + tabs.compactMap(\.pinGroup))) }
         // Only a pair that is whole in the file: one with an empty page, or
         // a private one, isn't written, and its other page comes back alone.
         let savedSplits = splits.compactMap { pair -> Session.Split? in
@@ -4141,7 +4187,7 @@ final class Browser: NSObject, ObservableObject {
         // Squares ahead of rows there too (see Browser.tiered).
         if tab.pin != nil, !tab.everywhere, let pin = pinDefs([tab]).first {
             let defs = Pins.defs(id).filter { $0.id != pin.id } + [pin]
-            Pins.set(id, defs.filter { $0.listed != true } + defs.filter { $0.listed == true }, from: self)
+            Pins.set(id, defs.filter { !$0.isListed } + defs.filter(\.isListed), from: self)
         }
         let squares = row.tabs.filter { $0.pin != nil && !$0.listed }.count
         let pins = row.tabs.firstIndex { $0.pin == nil } ?? row.tabs.count
@@ -4254,6 +4300,25 @@ final class Browser: NSObject, ObservableObject {
         return id
     }
 
+    /// Put a folder inside another (nil: back at the top level). Refused past
+    /// three levels, or into itself or one of its own.
+    @discardableResult
+    func nest(_ id: UUID, under parent: UUID?) -> Bool {
+        guard TabGroup.canNest(id, under: parent, in: tabGroups),
+              let at = tabGroups.firstIndex(where: { $0.id == id }) else { return false }
+        tabGroups[at].parent = parent
+        writeSession(now: true)
+        return true
+    }
+
+    /// A pin into a folder, or out of it (nil).
+    func setPinGroup(_ tab: Tab, _ group: UUID?) {
+        guard tab.pin != nil, tab.pinGroup != group, group == nil || tabGroups.contains(where: { $0.id == group }) else { return }
+        objectWillChange.send()
+        tab.pinGroup = group
+        writeSession(now: true)
+    }
+
     func renameTabGroup(_ id: UUID, to name: String) {
         guard let index = tabGroups.firstIndex(where: { $0.id == id }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4287,7 +4352,11 @@ final class Browser: NSObject, ObservableObject {
     func removeTabGroup(_ id: UUID) {
         guard tabGroups.contains(where: { $0.id == id }) else { return }
         for tab in tabs where tab.groupID == id { tab.groupID = nil }
-        tabGroups.removeAll { $0.id == id }
+        // What was inside moves up a level: folders and pins keep their place
+        // in the tree, only this folder goes.
+        let up = tabGroups.first { $0.id == id }?.parent
+        for tab in tabs where tab.pinGroup == id { tab.pinGroup = up }
+        tabGroups = TabGroup.removing(id, from: tabGroups).groups
         arrangeGroupedTabs()
         if editingGroupID == id { editingGroupID = nil }
         writeSession(now: true)
@@ -4428,7 +4497,8 @@ final class Browser: NSObject, ObservableObject {
 
     /// A group lasts as long as its tabs: the last one gone, it goes too.
     private func removeEmptyGroup(_ id: UUID?) {
-        guard let id, !tabs.contains(where: { $0.groupID == id }) else { return }
+        guard let id, !tabs.contains(where: { $0.groupID == id || $0.pinGroup == id }),
+              !tabGroups.contains(where: { $0.parent == id }) else { return }
         tabGroups.removeAll { $0.id == id }
         if editingGroupID == id { editingGroupID = nil }
     }

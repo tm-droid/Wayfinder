@@ -25,6 +25,19 @@ struct PinDef: Codable, Equatable {
     /// A row, not a square (see Tab.listed). Nil rather than false, so a
     /// pins file with no rows in it is written as it always was.
     var listed: Bool? = nil
+    /// Essentials are the icon grid at the top; the other pins are rows.
+    /// That is `listed` seen from the other side, so the two are one fact:
+    /// nil means what `listed` says (a pins.json from before essentials has
+    /// squares, which are essentials, and rows, which are not), and
+    /// `essential == false` is a row even where `listed` was never written.
+    /// Migration: nothing to rewrite; old files decode as they always drew.
+    var essential: Bool? = nil
+    /// The folder (TabGroup.id) the pin sits in, if any. Optional, so a file
+    /// with no folders is written as before.
+    var group: UUID? = nil
+
+    var isListed: Bool { listed == true || essential == false }
+    var isEssential: Bool { !isListed }
 }
 
 @MainActor

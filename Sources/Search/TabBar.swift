@@ -1249,6 +1249,8 @@ struct TabMenu: View {
                 Button("Pin as Row") { browser.pin(tab, listed: true) }
                     .disabled(!tab.isWeb || tab.shy)
             }
+            Button("Add to Essentials") { browser.setEssential(tab, true) }
+                .disabled(!tab.isWeb || !browser.canMakeEssential(tab))
         } else {
             if rows {
                 Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
@@ -1257,11 +1259,13 @@ struct TabMenu: View {
             // the address, so the way home a square's double-click is
             // (Browser.goHome) is here instead, while it has wandered.
             if rows && tab.listed {
-                Button("Back to Pinned Page") { browser.goHome(tab) }
+                Button("Back to \(browser.pinTitle(tab))") { browser.goHome(tab) }
                     .disabled(tab.home.map { Browser.samePage($0, tab.address) } ?? true)
             } else {
                 Button("Change Letter") { browser.editLetter(tab) }
             }
+            Button(tab.listed ? "Add to Essentials" : "Remove from Essentials") { browser.setEssential(tab, tab.listed) }
+                .disabled(tab.listed && !browser.canMakeEssential(tab))
             if browser.prefs.showsSharedPins {
                 Button(tab.everywhere ? "Only in This Space" : "Keep in Every Space") {
                     if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }

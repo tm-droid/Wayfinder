@@ -279,6 +279,8 @@ struct SearchApp: App {
                             Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
                                 .disabled(!tab.isWeb || tab.shy)
                         }
+                        Button("Add to Essentials") { browser.setEssential(tab, true) }
+                            .disabled(!tab.isWeb || !browser.canMakeEssential(tab))
                     } else {
                         if rows {
                             Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
@@ -286,6 +288,8 @@ struct SearchApp: App {
                         if !(rows && tab.listed) {
                             Button("Change Letter") { browser.editLetter(tab) }
                         }
+                        Button(tab.listed ? "Add to Essentials" : "Remove from Essentials") { browser.setEssential(tab, tab.listed) }
+                            .disabled(tab.listed && !browser.canMakeEssential(tab))
                         Button("Unpin Tab") { browser.unpin(tab) }
                     }
                 }

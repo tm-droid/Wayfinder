@@ -712,6 +712,10 @@ final class Tab: ObservableObject, Identifiable {
     /// Drawn as a square while Settings › Tabs › Pinned rows is off, or
     /// with the tabs across the top.
     @Published var listed = false
+    /// For a pin, the folder it sits in (see TabGroup.parent, PinDef.group).
+    /// Not groupID: that one is for ordinary tabs, and pins stay out of the
+    /// row's group ordering.
+    var pinGroup: UUID?
 
     /// The group that holds this ordinary tab in the sidebar.
     @Published var groupID: UUID? {

@@ -1114,7 +1114,7 @@ private struct SideRow: View {
                     PopupSign(browser: browser, tab: tab, colour: colour)
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
-                    TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
+                    TitleAtRest(label: tab.listed ? browser.drift(of: tab) ?? tab.label : tab.label, rest: rest, shown: atRest, hovering: hovering,
                                 size: prefs.sideTitle, colour: colour, roomy: true)
                 }
                 Spacer(minLength: 0)
@@ -1173,6 +1173,18 @@ private struct SideRow: View {
             }
         }
         .overlay(alignment: .trailing) {
+            // A pin row that has wandered: one press back to its page.
+            if hovering, !editing, tab.listed, browser.drift(of: tab) != nil {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 15, height: 15)
+                    .background(Palette.ink.opacity(0.07), in: Circle())
+                    .contentShape(Circle())
+                    .onTapGesture { browser.goHome(tab) }
+                    .help("Back to \(browser.pinTitle(tab))")
+                    .padding(.trailing, 28)
+            }
             if !editing {
                 ZStack {
                     if hovering {
