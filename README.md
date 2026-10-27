@@ -48,9 +48,9 @@ On purpose:
 | What | Where it is | Who can read it |
 |---|---|---|
 | Passwords | The macOS login keychain, as ordinary keychain items tagged `Search` | Search, signed by Office Commun. Any other app triggers the system's permission dialog. |
-| History, bookmarks, open tabs, hidden elements | Small JSON files in `~/Library/Application Support/Search/` | You. |
+| History, bookmarks, open tabs, hidden elements | Small JSON files in `~/Library/Application Support/Wayfinder/` | You. |
 | Cookies and site data | WebKit's own store for the app | The sites that set them, as in any browser. |
-| Extensions | Unpacked in `~/Library/Application Support/Search/Extensions/`, their data in WebKit's extension store | Each extension, within the permissions you accepted when adding it. |
+| Extensions | Unpacked in `~/Library/Application Support/Wayfinder/Extensions/`, their data in WebKit's extension store | Each extension, within the permissions you accepted when adding it. |
 | Anything else | Nowhere. There is no server. | — |
 
 A **private tab** (`⇧⌘N`) has its own cookie jar and leaves nothing behind when it closes.
@@ -85,7 +85,7 @@ So anyone can read exactly what a browser handling their passwords and history i
 
 - macOS 14 or later, Xcode 16 / Swift 6 toolchain
 - `swift build` — runs the app straight from the SwiftPM binary
-- `./build.sh` — assembles a real, double-clickable `Search.app` in `build/`, ad-hoc signed so it runs on your own Mac. `SEARCH_DEV=1 ./build.sh` makes it a dev build, on a yellow icon and named for its branch (`Search-split-view` from `claude/split-view-4a6927`), so it's never mistaken for an installed Search or for another worktree's build; `SEARCH_FEATURE=name` picks the name. It shares the installed app's settings and its bundle id, so while both run, a link from another app may land in either
+- `./build.sh` — assembles a real, double-clickable `Wayfinder.app` in `build/`, ad-hoc signed so it runs on your own Mac. `SEARCH_DEV=1 ./build.sh` makes it a dev build, on a yellow icon and named for its branch (`Search-split-view` from `claude/split-view-4a6927`), so it's never mistaken for an installed Search or for another worktree's build; `SEARCH_FEATURE=name` picks the name. It shares the installed app's settings and its bundle id, so while both run, a link from another app may land in either
 
 A build you make yourself won't be notarized or carry Office Commun's Developer ID, so the first launch needs a right-click → Open (or an allow in System Settings → Privacy & Security). That's expected — it's the same thing that happens with any app that isn't from the App Store or a notarized DMG. Your own build also keeps its passwords apart from a signed Search's: the keychain tells the two apart by their signatures.
 
@@ -117,7 +117,7 @@ Turn on **Settings › General › Let a script drive Search** and the running a
 
 Bench tabs are never selected for you, never enter the session or the history, and go when the script says so. It is how this browser is tested while somebody is using it.
 
-A coding agent can drive it through `./bench-mcp`, an MCP server over the same socket: `claude mcp add search-bench -- "$PWD/bench-mcp"` (or `codex mcp add …`). Each session starts this checkout's `build/Search.app` hidden, in a test world of its own, and wipes that world when it closes; the browser you use is never in reach. Its tools read a page as roles and names, click with real mouse events, type and check what the field holds, and wait on a condition, and a handle that has gone stale or a button that is covered is an error, never a guess. `python3 Tests/bench_mcp.py` checks it end to end.
+A coding agent can drive it through `./bench-mcp`, an MCP server over the same socket: `claude mcp add search-bench -- "$PWD/bench-mcp"` (or `codex mcp add …`). Each session starts this checkout's `build/Wayfinder.app` hidden, in a test world of its own, and wipes that world when it closes; the browser you use is never in reach. Its tools read a page as roles and names, click with real mouse events, type and check what the field holds, and wait on a condition, and a handle that has gone stale or a button that is covered is an error, never a guess. `python3 Tests/bench_mcp.py` checks it end to end.
 
 `python3 Tests/split_view.py`, after `./build.sh`, checks Split View through the app's own model in a hidden test run with its own settings and files, all removed afterwards. It never makes or shows a window; what can only be seen (dragging onto a page's edge, the divider under the pointer, the motion) is checked by hand on a release candidate.
 

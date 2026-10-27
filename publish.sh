@@ -37,7 +37,7 @@ rm -rf "$CHIP"
 # read only it, and a broken one would stop every update without a word.
 CHECK="$(mktemp -d)"
 ditto -x -k "$FROM/appcast.json.zip" "$CHECK"
-codesign --verify -R='anchor apple generic and identifier "com.officecommun.search.appcast" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "7BYKA895MC"' "$CHECK/appcast.json" \
+codesign --verify -R='anchor apple generic and identifier "com.tanush.Wayfinder.appcast" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "7BYKA895MC"' "$CHECK/appcast.json" \
   || { rm -rf "$CHECK"; echo "$FROM/appcast.json.zip doesn't verify — not publishing" >&2; exit 1; }
 cmp -s "$CHECK/appcast.json" "$FROM/appcast.json" || { rm -rf "$CHECK"; echo "the signed appcast isn't $FROM/appcast.json — not publishing" >&2; exit 1; }
 rm -rf "$CHECK"

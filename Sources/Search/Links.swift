@@ -33,7 +33,7 @@ final class Links: NSObject, NSApplicationDelegate {
         askingToQuit = true
         defer { askingToQuit = false }
         let alert = NSAlert()
-        alert.messageText = "Quit Search?"
+        alert.messageText = "Quit Wayfinder?"
         alert.informativeText = "Your windows and tabs will close."
         alert.addButton(withTitle: "Quit").keyEquivalent = ""
         let cancel = alert.addButton(withTitle: "Cancel")
@@ -333,12 +333,9 @@ final class Links: NSObject, NSApplicationDelegate {
     /// Mail, that already knows what build this is. The person still reads
     /// it and presses send themselves — nothing here sends anything.
     static func writeFeedback() {
-        var text = URLComponents()
-        text.scheme = "mailto"
-        text.path = "hello@officecommun.com"
+        var text = URLComponents(string: "https://github.com/tm-droid/Wayfinder/issues/new")!
         text.queryItems = [
-            URLQueryItem(name: "subject", value: "Search feedback — \(Updater.version) (\(Updater.build))"),
-            URLQueryItem(name: "body", value: "\n\n—\nSearch \(Updater.version), build \(Updater.build), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"),
+            URLQueryItem(name: "body", value: "\n\n—\nWayfinder \(Updater.version), build \(Updater.build), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"),
         ]
         guard let url = text.url else { return }
         NSWorkspace.shared.open(url)

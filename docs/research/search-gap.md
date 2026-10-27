@@ -112,7 +112,7 @@ Paths are under `Sources/Search/` (upstream Search @ 88017ad, pre-rebrand). Line
 ## W4 Mods
 **Exists**
 - Internal pages:
-  - `InternalPage.Kind` (`InternalPages.swift:18`) are native SwiftUI `search://` pages, with no user CSS.
+  - `InternalPage.Kind` (`InternalPages.swift:18`) are native SwiftUI `wayfinder://` pages, with no user CSS.
 - Settings:
   - `SettingsPanel.Page` (`Settings.swift:37`): general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about.
   - `SettingsIndex.swift` has `SettingsGroup` (`:15`, groups `:62-95`) and `SettingsItem` (`:25`). It also feeds the ⌘F settings search.

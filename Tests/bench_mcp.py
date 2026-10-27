@@ -130,7 +130,7 @@ try:
     said, err = tool("open_session")
     ok("open_session starts a world", not err and said.get("started") and said["world"].startswith("agent-"), said)
     session, world = said["session"], said["world"]
-    support = os.path.expanduser(f"~/Library/Application Support/Search ({world})")
+    support = os.path.expanduser(f"~/Library/Application Support/Wayfinder ({world})")
 
     said, err = tool("open_session", world=world)
     ok("a second controller is refused", err and code(said) == "world_busy", said)
@@ -210,7 +210,7 @@ try:
     session = None
     ok("close_session quits and wipes", not err and said.get("quit") and said.get("wiped"), said)
     ok("the world's folder is gone", not os.path.exists(support), support)
-    domain = f"com.officecommun.search.test.{world}"
+    domain = f"com.tanush.Wayfinder.test.{world}"
     left = subprocess.run(["defaults", "read", domain], capture_output=True, text=True, check=False)
     # An emptied domain can still be listed, as {}.
     ok("the world's settings are gone", left.returncode != 0 or left.stdout.strip() in ("", "{\n}", "{}"), left.stdout)
@@ -224,7 +224,7 @@ finally:
 server = subprocess.Popen([str(ROOT / "bench-mcp")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t"}})
 said, err = tool("open_session")
-left = os.path.expanduser(f"~/Library/Application Support/Search ({said.get('world')})")
+left = os.path.expanduser(f"~/Library/Application Support/Wayfinder ({said.get('world')})")
 server.stdin.close()
 server.wait(timeout=60)
 ok("a session left open goes with the server", not err and not os.path.exists(left), said)
@@ -232,7 +232,7 @@ ok("a session left open goes with the server", not err and not os.path.exists(le
 
 # Worlds started behind the server's back, the way fresh.sh starts one.
 def support(world):
-    return os.path.expanduser(f"~/Library/Application Support/Search ({world})")
+    return os.path.expanduser(f"~/Library/Application Support/Wayfinder ({world})")
 
 
 def holders(world):
@@ -255,8 +255,8 @@ def raw(world, request):
 
 def start(world):
     for key in ("bench", "welcomed"):
-        subprocess.run(["defaults", "write", f"com.officecommun.search.test.{world}", key, "-bool", "true"], check=True)
-    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={world}", str(ROOT / "build/Search.app")], check=True)
+        subprocess.run(["defaults", "write", f"com.tanush.Wayfinder.test.{world}", key, "-bool", "true"], check=True)
+    subprocess.run(["open", "-n", "-g", "-j", "--env", f"SEARCH_PROBE={world}", str(ROOT / "build/Wayfinder.app")], check=True)
     for _ in range(300):
         try:
             if "tabs" in raw(world, {"do": "tabs"}):
@@ -281,11 +281,11 @@ def stop(world, wipe=True):
         for byte in world.encode():
             h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
         store = f"5E4C{h >> 16:04X}-{h & 0xFFFF:04X}-4000-8000-"
-        webkit = os.path.expanduser("~/Library/WebKit/com.officecommun.search")
+        webkit = os.path.expanduser("~/Library/WebKit/com.tanush.Wayfinder")
         shutil.rmtree(f"{webkit}/WebsiteDataStore/{store.lower()}000000000001", ignore_errors=True)
         shutil.rmtree(f"{webkit}/WebExtensions/{store}000000000002", ignore_errors=True)
         shutil.rmtree(support(world), ignore_errors=True)
-        subprocess.run(["defaults", "delete", f"com.officecommun.search.test.{world}"], capture_output=True, check=False)
+        subprocess.run(["defaults", "delete", f"com.tanush.Wayfinder.test.{world}"], capture_output=True, check=False)
 
 
 server = subprocess.Popen([str(ROOT / "bench-mcp")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)

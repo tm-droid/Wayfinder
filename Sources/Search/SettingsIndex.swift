@@ -104,14 +104,14 @@ enum SettingsIndex {
     static let items: [SettingsItem] = ([
         // General
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
-              title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
+              title: "Open links from other apps", detail: "Make Wayfinder the browser Mail, Slack and the rest send links to",
               words: ["default browser"]),
         .init(id: "general.import", group: "browser", icon: "square.and.arrow.down.on.square",
               title: "Bring things over", detail: "Bookmarks, history, passwords and extensions from another browser",
               more: "From another browser on this Mac, or from a file it exported. Nothing leaves your Mac.",
               words: ["import", "chrome", "safari", "arc", "migrate"]),
         .init(id: "quit.confirm", group: "browser", icon: "power",
-              title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Search closes the browser",
+              title: "Confirm before quitting", detail: "Ask before ⌘Q or Quit Wayfinder closes the browser",
               keys: ["quit.confirm"], words: ["quit", "cmd q"]),
         .init(id: "downloads.folder", group: "downloads", icon: "folder",
               title: "Save to", detail: "", keys: ["downloads"], words: ["download folder"]),
@@ -192,7 +192,7 @@ enum SettingsIndex {
               keys: ["tabs.sleep", SleepPace.key], words: ["memory", "discard", "suspend", "ram"], kind: .wide),
         .init(id: "tabs.close.after", group: "memory", icon: "timer",
               title: "Close tabs you leave alone", detail: "Pinned, named and grouped tabs stay. ⇧⌘T brings one back",
-              more: "Counted from when you last left the tab, while Search is quit too. Private tabs, sound, calls and anything typed stay.",
+              more: "Counted from when you last left the tab, while Wayfinder is quit too. Private tabs, sound, calls and anything typed stay.",
               keys: ["tabs.close.after"], words: ["auto close", "archive", "clean up"]),
         .init(id: "tabs.shortcuts", group: "tabbar", icon: "command",
               title: "Show tab numbers while ⌘ is held", detail: "Which tab each ⌘1–9 selects",
@@ -214,7 +214,7 @@ enum SettingsIndex {
               title: "Site shortcuts", detail: "A word before your search sends it to that site: \"yt cats\"",
               keys: ["search.keywords"], words: ["keyword", "bang"]),
         .init(id: "links.little", group: "links", icon: "rectangle.on.rectangle",
-              title: "Open links from other apps in a small window", detail: "To read and close, or keep with Open in Search (⌘O)",
+              title: "Open links from other apps in a small window", detail: "To read and close, or keep with Open in Wayfinder (⌘O)",
               keys: ["links.little"], words: ["little arc", "mini window"]),
         .init(id: "reader.twins", group: "reading", icon: "doc.text",
               title: "Read the site's own Markdown", detail: "When a page has a Markdown copy, reading mode shows that",
@@ -225,11 +225,11 @@ enum SettingsIndex {
               more: "A small switch in its corner makes an article light, dark or as the window is, kept for the next one.",
               keys: ["reader.follows"], words: ["reader", "dark"]),
         .init(id: "float.style", group: "video", icon: "pip",
-              title: "The floating video", detail: "Search's own window, or macOS's picture in picture",
-              more: "Search's window floats a video without a click and keeps its page alive in it. Picture in picture is the one Safari uses, with the system's controls.",
+              title: "The floating video", detail: "Wayfinder's own window, or macOS's picture in picture",
+              more: "Wayfinder's window floats a video without a click and keeps its page alive in it. Picture in picture is the one Safari uses, with the system's controls.",
               keys: ["float.style"], words: ["pip", "picture in picture", "mini player"]),
         .init(id: "float.own", group: "video", icon: "pip.exit",
-              title: "Float the video on its own", detail: "A playing video comes out when you leave its tab, or Search",
+              title: "Float the video on its own", detail: "A playing video comes out when you leave its tab, or Wayfinder",
               more: "It goes back into its tab when you return. ⇧⌘P still floats one by hand.",
               keys: ["float.leave", "float.away"], words: ["pip", "picture in picture", "switch apps"], kind: .wide),
         .init(id: "media.click", group: "video", icon: "play.slash",
@@ -264,7 +264,7 @@ enum SettingsIndex {
               words: ["profile", "accounts", "work", "personal"]),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
-              more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Search quits, comes back at the page it was pinned at.",
+              more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Wayfinder quits, comes back at the page it was pinned at.",
               keys: ["pins.home", "pins.peek"], words: ["pinned tabs", "go home", "reset pin"]),
         .init(id: "pins.list", group: "pins", icon: "list.bullet.rectangle",
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
@@ -295,7 +295,7 @@ enum SettingsIndex {
               keys: ["passkeys"], words: ["webauthn", "touch id"]),
         .init(id: "passwords.apple", group: "apple", icon: "applelogo",
               title: "Passwords from Apple's Passwords app", detail: "Your Passwords app's accounts under the sign-in box. Unofficial",
-              more: "Search talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.",
+              more: "Wayfinder talks to the helper Apple made for its Chrome extension, as that extension. Never in private tabs.",
               keys: ["passwords.apple"], words: ["icloud keychain", "apple"]),
 
         // Privacy
@@ -345,14 +345,14 @@ enum SettingsIndex {
         .init(id: "updates.version", group: "updates", icon: "arrow.down.app",
               title: "Updates", detail: "Checked every hour on its own", words: ["version", "update"]),
         .init(id: "updates.auto", group: "updates", icon: "arrow.triangle.2.circlepath",
-              title: "Install updates on its own", detail: "Off, Search tells you and waits for Install",
+              title: "Install updates on its own", detail: "Off, Wayfinder tells you and waits for Install",
               keys: [Updater.installKey], words: ["automatic updates"]),
         .init(id: "about.feedback", group: "updates", icon: "envelope",
               title: "Found something wrong?", detail: "Opens a draft with the version already in it", words: ["bug", "feedback", "report"]),
         .init(id: "about.notes", group: "updates", icon: "sparkles",
               title: "What's new", detail: "Every version's notes, newest first", words: ["release notes", "changelog"]),
         .init(id: "bench", group: "developer", icon: "terminal",
-              title: "Let a script drive Search", detail: "A local socket for testing; its tabs never take over",
+              title: "Let a script drive Wayfinder", detail: "A local socket for testing; its tabs never take over",
               more: "Its tabs open beside yours with a flask on them. See ./bench.",
               keys: ["bench"], words: ["automation", "script", "developer"]),
 
@@ -401,6 +401,7 @@ enum SettingsIndex {
         switch item.id {
         case "privacy.clickIDs": return ClickIDs.possible
         case "privacy.gpc": return PrivacySignal.possible
+        case "updates.version", "updates.auto": return Updater.enabled
         default: return true
         }
     }
@@ -442,7 +443,7 @@ enum SettingsIndex {
     /// What a dimmed dependent row says instead of its own line.
     static func needs(_ item: SettingsItem) -> String {
         switch item.id {
-        case "pages.dusk": return "Only while Search isn't set to Light"
+        case "pages.dusk": return "Only while Wayfinder isn't set to Light"
         case "toolbar.left": return "Only with the tabs across the top"
         case "sidebar.roomy": return "Only with titles in the column"
         default: return "Only with the tabs down a side"

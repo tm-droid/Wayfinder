@@ -40,7 +40,7 @@
 #   - a notarytool profile: xcrun notarytool store-credentials "search"
 #     (SEARCH_NOTARY_PROFILE names it; default "search")
 #   - SEARCH_DOWNLOAD_URL, the https folder the three files are served from,
-#     for the appcast. Default https://officecommun.com/search, which is
+#     for the appcast. Default https://github.com/tm-droid/Wayfinder/releases/latest/download, which is
 #     where Updater.feed in Updater.swift looks.
 #
 # NOTES.md, next to this script, is what's new: newest release first, one
@@ -57,14 +57,14 @@ case "$ARCH" in
   x86_64) OUT="build/intel"; SUBFOLDER="/intel" ;;
   *) echo "SEARCH_ARCH is arm64 or x86_64, not “$ARCH”" >&2; exit 1 ;;
 esac
-APP="$OUT/Search.app"
-NAME="Search"
+APP="$OUT/Wayfinder.app"
+NAME="Wayfinder"
 # Asked for with SEARCH_DEV=1, a dev build, on a yellow plate and named for
 # the feature it's built from: "Search-split-view" in the menu bar, the Dock
 # and ⌘Tab, so it's never taken for the installed app beside it, or for the
 # dev build from another worktree. Only the name people see changes. The
 # bundle id stays, so it shares the real app's settings, and so does the
-# folder, build/Search.app, which fresh.sh and the tests open. Not by
+# folder, build/Wayfinder.app, which fresh.sh and the tests open. Not by
 # default: a plain ./build.sh is also the Search people here use every day
 # and the release candidates. What goes in a DMG or a ZIP is never one.
 case "${SEARCH_DEV:-}" in
@@ -125,26 +125,33 @@ vtool -set-build-version macos "$MINIMUM" "$SDK" -replace \
 mv "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
 # The AppleScript dictionary (Scripting.swift): read-only, tabs' addresses
 # and titles. The plist below points to it.
-cp Search.sdef "$APP/Contents/Resources/"
+cp Wayfinder.sdef "$APP/Contents/Resources/"
 
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
 # what the app weighed (6.5 MB of binary, 2.7 without them), and nothing the
 # app reads while it runs. They are kept beside the build instead, as a dSYM
 # that turns the addresses in a crash report back into names (Console, or
-# atos -o build/Search.app.dSYM/Contents/Resources/DWARF/Search).
+# atos -o build/Wayfinder.app.dSYM/Contents/Resources/DWARF/Search).
 if [ "$CONFIG" = "release" ]; then
   rm -rf "$APP.dSYM"
   dsymutil "$BINARY" -o "$APP.dSYM" 2>/dev/null || echo "no dSYM this time" >&2
   strip -x "$APP/Contents/MacOS/$NAME"
 fi
 
-# The icon, drawn fresh each time — it is thirty lines of Swift, not an asset
-# to keep in step with anything.
+# The icon: WayfinderIcon.icon, the Icon Composer document, holds the 1024 px
+# picture. The .icns is cut from it here, and the document itself goes to
+# actool below for the Dark, Clear and Tinted styles.
 ICONSET="build/AppIcon.iconset"
 ICONDOC="build/AppIcon.icon"
+ICONPNG="WayfinderIcon.icon/Assets/AppIcon.png"
 rm -rf "$ICONSET" "$ICONDOC"
-SEARCH_DEV="$DEV" swift Icon/icon.swift "$ICONSET" "$ICONDOC" > /dev/null
+mkdir -p "$ICONSET"
+for SIZE in 16 32 128 256 512; do
+  sips -z $SIZE $SIZE "$ICONPNG" --out "$ICONSET/icon_${SIZE}x${SIZE}.png" > /dev/null
+  sips -z $((SIZE * 2)) $((SIZE * 2)) "$ICONPNG" --out "$ICONSET/icon_${SIZE}x${SIZE}@2x.png" > /dev/null
+done
+cp -R WayfinderIcon.icon "$ICONDOC"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 # macOS 26's Dark, Clear and Tinted Dock styles read the icon from an asset
@@ -183,7 +190,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundleDisplayName</key><string>$NAME</string>
   <key>CFBundleExecutable</key><string>$NAME</string>
-  <key>CFBundleIdentifier</key><string>com.officecommun.search</string>
+  <key>CFBundleIdentifier</key><string>com.tanush.Wayfinder</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
@@ -191,10 +198,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   $ICONNAME
   <key>LSMinimumSystemVersion</key><string>$MINIMUM</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
-  <key>NSHumanReadableCopyright</key><string>© Office Commun · Search</string>
+  <key>NSHumanReadableCopyright</key><string>© Wayfinder</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleScriptEnabled</key><true/>
-  <key>OSAScriptingDefinition</key><string>Search.sdef</string>
+  <key>OSAScriptingDefinition</key><string>Wayfinder.sdef</string>
   <!-- Owning http and https is what sends a link clicked in Mail here.
        Appearing in Desktop & Dock → Default web browser also needs the
        XHTML document type below. -->
@@ -245,16 +252,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        still wants a sentence to put in its own prompt, and touching the APIs
        without one is a crash rather than a refusal. -->
   <key>NSCameraUsageDescription</key>
-  <string>Websites you visit can ask to use your camera. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
+  <string>Websites you visit can ask to use your camera. Wayfinder asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Websites you visit can ask to use your microphone. Search asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
+  <string>Websites you visit can ask to use your microphone. Wayfinder asks you the first time each site does and keeps your answer; Settings › Privacy forgets them.</string>
   <!-- Location: the first key is the one macOS has always read; the second
        is the one CoreLocation's requestWhenInUseAuthorization documents.
        Same sentence in both. -->
   <key>NSLocationUsageDescription</key>
-  <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
+  <string>Websites you visit can ask for your location. Wayfinder asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>Websites you visit can ask for your location. Search asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
+  <string>Websites you visit can ask for your location. Wayfinder asks you each time a site does, unless you choose Always allow for it; Settings › Privacy forgets those choices.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Files you download are saved to your Downloads folder.</string>
 </dict>
@@ -281,17 +288,17 @@ IDENTITY="${SEARCH_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/
 # Developer ID provisioning profile that carries it. With the profile next to
 # this script, both go in; without it, the app is signed as before, because
 # a restricted entitlement with no profile behind it is an app that won't open.
-ENTITLEMENTS="Search.entitlements"
+ENTITLEMENTS="Wayfinder.entitlements"
 # A release that ships without it loses passkeys and the keychain items the
 # entitled builds saved (1.0.6, build 202610241534, went out that way from a
 # worktree the git-ignored profile hadn't been copied into): ship refuses.
-if [ "$STEP" = "ship" ] && [ ! -f "Search.provisionprofile" ] && [ -z "${SEARCH_ALLOW_NO_PASSKEYS:-}" ]; then
-  echo "ship: Search.provisionprofile is missing here (it's git-ignored: copy it from the main checkout)" >&2
+if [ "$STEP" = "ship" ] && [ ! -f "Wayfinder.provisionprofile" ] && [ -z "${SEARCH_ALLOW_NO_PASSKEYS:-}" ]; then
+  echo "ship: Wayfinder.provisionprofile is missing here (it's git-ignored: copy it from the main checkout)" >&2
   exit 1
 fi
-if [ -f "Search.provisionprofile" ]; then
-  cp "Search.provisionprofile" "$APP/Contents/embedded.provisionprofile"
-  ENTITLEMENTS="Search.passkeys.entitlements"
+if [ -f "Wayfinder.provisionprofile" ]; then
+  cp "Wayfinder.provisionprofile" "$APP/Contents/embedded.provisionprofile"
+  ENTITLEMENTS="Wayfinder.passkeys.entitlements"
   echo "passkeys: profile embedded"
 fi
 # A checkout in an iCloud-synced folder (~/Documents) tags every file with
@@ -359,7 +366,7 @@ echo "packed: $ZIP"
 # characters JSON minds escaped, is the line under the version in Settings.
 # Written last — after notarisation has stapled its ticket to the DMG, which
 # changes it — so the DMG's hash is the one people download.
-BASE="${SEARCH_DOWNLOAD_URL:-https://officecommun.com/search}"
+BASE="${SEARCH_DOWNLOAD_URL:-https://github.com/tm-droid/Wayfinder/releases/latest/download}"
 BASE="${BASE%/}$SUBFOLDER"
 NOTES=""
 if [ -f NOTES.md ]; then
@@ -378,8 +385,8 @@ write_engine() {
   [ "$ARCH" = "arm64" ] && [ -n "${SEARCH_AI_ENGINE_VERSION:-}" ] || return 0
   [[ "$SEARCH_AI_ENGINE_VERSION" =~ ^[0-9]+$ ]] || { echo "SEARCH_AI_ENGINE_VERSION is a whole number" >&2; exit 1; }
   [ -f "$ENGINE" ] || { echo "$ENGINE is missing — ./engine.sh arm64 makes it" >&2; exit 1; }
-  codesign --verify --strict -R='anchor apple generic and identifier "com.officecommun.search.ai-engine" and certificate leaf[subject.OU] = "7BYKA895MC"' "$ENGINE" \
-    || { echo "$ENGINE isn't signed with the Developer ID as com.officecommun.search.ai-engine" >&2; exit 1; }
+  codesign --verify --strict -R='anchor apple generic and identifier "com.tanush.Wayfinder.ai-engine" and certificate leaf[subject.OU] = "7BYKA895MC"' "$ENGINE" \
+    || { echo "$ENGINE isn't signed with the Developer ID as com.tanush.Wayfinder.ai-engine" >&2; exit 1; }
   local FILE="search-ai-engine-arm64-$SEARCH_AI_ENGINE_VERSION"
   mkdir -p "$OUT/ai"
   cp "$ENGINE" "$OUT/ai/$FILE"
@@ -413,7 +420,7 @@ JSON
     local SIGNED
     SIGNED="$(mktemp -d)"
     cp "$OUT/appcast.json" "$SIGNED/appcast.json"
-    codesign --force --timestamp --sign "$IDENTITY" --identifier com.officecommun.search.appcast "$SIGNED/appcast.json"
+    codesign --force --timestamp --sign "$IDENTITY" --identifier com.tanush.Wayfinder.appcast "$SIGNED/appcast.json"
     ditto -c -k --sequesterRsrc "$SIGNED/appcast.json" "$OUT/appcast.json.zip"
     rm -rf "$SIGNED"
     echo "signed: $OUT/appcast.json.zip"

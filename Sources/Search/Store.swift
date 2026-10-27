@@ -20,8 +20,8 @@ enum Store {
     }
 
     /// Which test world a test run lives in. SEARCH_PROBE=1, or a run from
-    /// the build folder, is the test world, "Search (test)". SEARCH_PROBE=
-    /// <name> is a world of its own, "Search (<name>)", with settings and
+    /// the build folder, is the test world, "Wayfinder (test)". SEARCH_PROBE=
+    /// <name> is a world of its own, "Wayfinder (<name>)", with settings and
     /// WebKit stores of its own: two sessions testing at once, or a
     /// measurement that needs a browser nobody has installed anything in,
     /// never borrow each other's. Nil for the browser somebody is using.
@@ -98,7 +98,7 @@ enum Store {
     /// differ from stores made by identifier in how long extension workers
     /// are let live.
     static var ownContainer: Bool {
-        (Bundle.main.bundleIdentifier ?? "") != "com.officecommun.search"
+        (Bundle.main.bundleIdentifier ?? "") != "com.tanush.Wayfinder"
     }
 
     /// The fixed identifiers of a test world's WebKit stores: 1 for websites,
@@ -123,7 +123,7 @@ enum Store {
     static let folder: URL = {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let home = support.appendingPathComponent(world.map { "Search (\($0))" } ?? "Search", isDirectory: true)
+        let home = support.appendingPathComponent(world.map { "Wayfinder (\($0))" } ?? "Wayfinder", isDirectory: true)
         if !testing {
             let old = support.appendingPathComponent("Office Browser", isDirectory: true)
             let files = FileManager.default
@@ -159,7 +159,7 @@ enum Store {
             carryOver(into: .standard)
             return .standard
         }
-        let suite = world == "test" ? "com.officecommun.search.test" : "com.officecommun.search.test.\(world ?? "")"
+        let suite = world == "test" ? "com.tanush.Wayfinder.test" : "com.tanush.Wayfinder.test.\(world ?? "")"
         return UserDefaults(suiteName: suite) ?? .standard
     }()
 

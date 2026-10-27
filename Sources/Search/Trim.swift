@@ -24,7 +24,7 @@ enum Trim {
     private static let margin: UInt64 = 64 << 20
     /// Read and written on `queue` only.
     nonisolated(unsafe) private static var after: UInt64 = 0
-    private static let queue = DispatchQueue(label: "com.officecommun.search.trim", qos: .utility)
+    private static let queue = DispatchQueue(label: "com.tanush.Wayfinder.trim", qos: .utility)
 
     /// Started once, at launch: the background is one moment to look.
     static func start() {

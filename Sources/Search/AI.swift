@@ -110,7 +110,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 enum AIKeys {
     enum Saved { case kept, unavailable, failed }
 
-    private static let service = "com.officecommun.search.ai"
+    private static let service = "com.tanush.Wayfinder.ai"
     /// A test run's, by account, gone when it quits.
     private static var rehearsal: [String: String] = [:]
 

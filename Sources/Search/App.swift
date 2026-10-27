@@ -39,7 +39,7 @@ struct SearchApp: App {
         // shares, and a probe resized for a test once changed the size the
         // real window came back at. The other windows' frames are in
         // windows.json (see Windows.swift).
-        Window("Search", id: Browsers.sceneID) {
+        Window("Wayfinder", id: Browsers.sceneID) {
             SceneRoot(slot: SceneSlot.shared)
                 .frame(minWidth: 640, minHeight: 420)
         }
@@ -357,7 +357,7 @@ struct SearchApp: App {
                     .shortcut("history.clear")
             }
             // Search › Check for Updates…, under About, as in any Mac app.
-            CommandGroup(after: .appInfo) { UpdateMenuItem() }
+            if Updater.enabled { CommandGroup(after: .appInfo) { UpdateMenuItem() } }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
                     .shortcut("app.settings")
@@ -376,7 +376,7 @@ struct SearchApp: App {
 private struct QuitAndHelp: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appTermination) {
-            Button("Quit Search") {
+            Button("Quit Wayfinder") {
                 if Links.shouldQuit() { NSApp.terminate(nil) }
             }
             .keyboardShortcut("q", modifiers: .command)

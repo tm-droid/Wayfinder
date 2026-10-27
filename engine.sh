@@ -19,7 +19,7 @@ LLAMA_TAG="v0.5.0"
 LLAMA_COMMIT="7fe450e19305b828c199d602c23a8337aaa1f03b"
 OUT="build/engine"
 SRC="$OUT/llama.cpp"
-IDENTIFIER="com.officecommun.search.ai-engine"
+IDENTIFIER="com.tanush.Wayfinder.ai-engine"
 JOBS=$(sysctl -n hw.logicalcpu)
 which="${1:-all}"
 

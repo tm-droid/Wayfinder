@@ -14,8 +14,8 @@ import Security
 // newer.
 //
 // What the updater leaves alone, on purpose: everything in
-// ~/Library/Application Support/Search, the defaults under
-// com.officecommun.search, and the keychain. The session, the pins, the
+// ~/Library/Application Support/Wayfinder, the defaults under
+// com.tanush.Wayfinder, and the keychain. The session, the pins, the
 // history, the passwords — none of it is read, moved or rewritten here. Only
 // the bundle changes hands, and it keeps its bundle id and its signing
 // identity, so the keychain items the old build made open for the new one.
@@ -28,6 +28,9 @@ import Security
 @MainActor
 final class Updater: ObservableObject {
     static let shared = Updater()
+
+    /// Wayfinder has no update feed: off, nothing is fetched and no update is ever offered.
+    nonisolated static let enabled = false
 
     /// Where the file lives. SEARCH_FEED, for a test run, points somewhere
     /// else — and is the only way plain http is accepted, so a build that
@@ -43,9 +46,9 @@ final class Updater: ObservableObject {
         // SEARCH_ARCH=x86_64) and a feed beside it naming only Intel builds,
         // so neither kind of Mac is ever offered the other's.
         #if arch(x86_64)
-        return URL(string: "https://officecommun.com/search/intel/appcast.json")!
+        return URL(string: "https://github.com/tm-droid/Wayfinder/releases/latest/download/intel/appcast.json")!
         #else
-        return URL(string: "https://officecommun.com/search/appcast.json")!
+        return URL(string: "https://github.com/tm-droid/Wayfinder/releases/latest/download/appcast.json")!
         #endif
     }()
 
@@ -131,6 +134,7 @@ final class Updater: ObservableObject {
     /// At launch, then every hour, quietly. A test run, pointed at its own feed,
     /// checks every time.
     func checkIfDue(then say: @escaping (String) -> Void) {
+        guard Updater.enabled else { return }
         self.say = say
         Swap.sweep()
         // And again every hour for as long as the app is up — a browser that
@@ -179,6 +183,7 @@ final class Updater: ObservableObject {
     /// names, or nil when this is the latest; what becomes of it after that
     /// is said through the line handed to `checkIfDue`.
     func check(then done: @escaping (Release?) -> Void) {
+        guard Updater.enabled else { done(nil); return }
         guard !checking else { return }
         checking = true
         Task { [weak self] in
@@ -228,7 +233,7 @@ final class Updater: ObservableObject {
                     if Store.testing { Updater.diskVerdict = "verified" } else { NSWorkspace.shared.open(dmg) }
                 case .failure(let error):
                     Updater.diskVerdict = "refused: \(error)"
-                    say?("That download didn't check out — get Search from searchbrowser.app")
+                    say?("That download didn't check out — get Wayfinder from github.com/tm-droid/Wayfinder")
                 }
             }
         }
@@ -355,7 +360,7 @@ final class Updater: ObservableObject {
 
     /// The team that signs Search's releases, and with them its feed.
     nonisolated static let team = "7BYKA895MC"
-    nonisolated static let feedIdentifier = "com.officecommun.search.appcast"
+    nonisolated static let feedIdentifier = "com.tanush.Wayfinder.appcast"
 
     /// The feed inside `packed`, if it is Office Commun's: appcast.json with
     /// a code signature (codesign keeps it in the file's extended attributes,

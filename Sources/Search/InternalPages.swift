@@ -8,7 +8,7 @@ import SwiftUI
 // put beside a page in Split View, and close with ⌘W like any other.
 //
 // One tab of each kind per window: asking again goes to the one already
-// open. Each has an address of its own, search://settings/privacy, which
+// open. Each has an address of its own, wayfinder://settings/privacy, which
 // the field shows, the session keeps, and code can open directly. Nothing
 // about them reaches WebKit: the tab holds no web view while it shows one.
 
@@ -29,9 +29,9 @@ struct InternalPage: Equatable {
         self.detail = detail?.isEmpty == true ? nil : detail
     }
 
-    static let scheme = "search"
+    static let scheme = "wayfinder"
 
-    /// search://settings, search://settings/privacy, search://import/Arc.
+    /// wayfinder://settings, wayfinder://settings/privacy, wayfinder://import/Arc.
     init?(url: URL) {
         guard url.scheme?.lowercased() == InternalPage.scheme,
               let host = url.host()?.lowercased(), let kind = Kind(rawValue: host)

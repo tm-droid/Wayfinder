@@ -18,7 +18,7 @@ final class ImportFileTests: XCTestCase {
         Disk.drain()
         if let probeWorld, Store.world == probeWorld {
             try? FileManager.default.removeItem(at: Store.folder)
-            UserDefaults(suiteName: "com.officecommun.search.test.\(probeWorld)")?.removePersistentDomain(forName: "com.officecommun.search.test.\(probeWorld)")
+            UserDefaults(suiteName: "com.tanush.Wayfinder.test.\(probeWorld)")?.removePersistentDomain(forName: "com.tanush.Wayfinder.test.\(probeWorld)")
         }
         unsetenv("SEARCH_PROBE")
         super.tearDown()

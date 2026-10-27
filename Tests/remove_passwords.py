@@ -23,7 +23,7 @@ import split_view as sv  # noqa: E402
 sv.use("remove-passwords")
 
 t = sv.T()
-LABEL = f"Search ({sv.W})"  # Vault's label in this world
+LABEL = f"Wayfinder ({sv.W})"  # Vault's label in this world
 
 def sweep():
     """Leftovers of a run that crashed before its cleanup: this world's own

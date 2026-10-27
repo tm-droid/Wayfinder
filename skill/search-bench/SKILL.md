@@ -21,11 +21,11 @@ Every command goes to one world. Pass the same flag on every call.
 
 | Flag | Whose browser | Socket folder |
 |---|---|---|
-| `--test` | World `test` | `~/Library/Application Support/Search (test)/` |
-| `--world NAME` | World `NAME` (lowercase letters, digits, hyphens) | `~/Library/Application Support/Search (NAME)/` |
-| none | The installed browser they actually use | `~/Library/Application Support/Search/` |
+| `--test` | World `test` | `~/Library/Application Support/Wayfinder (test)/` |
+| `--world NAME` | World `NAME` (lowercase letters, digits, hyphens) | `~/Library/Application Support/Wayfinder (NAME)/` |
+| none | The installed browser they actually use | `~/Library/Application Support/Wayfinder/` |
 
-Use a test world for any work that changes chrome, installs or removes extensions, resizes, sends real key events, or selects a tab. A `swift build` binary under `.build/` is always world `test`, even with no `SEARCH_PROBE`. `./fresh.sh` launches `build/Search.app` with `SEARCH_PROBE` set, which is also a test world.
+Use a test world for any work that changes chrome, installs or removes extensions, resizes, sends real key events, or selects a tab. A `swift build` binary under `.build/` is always world `test`, even with no `SEARCH_PROBE`. `./fresh.sh` launches `build/Wayfinder.app` with `SEARCH_PROBE` set, which is also a test world.
 
 `select`, `key`, `resize`, and `ext-answer` fail on the installed browser. `--yes` skips an extension's install dialog only on a test run.
 
@@ -33,20 +33,20 @@ On the installed browser, only when they asked you to drive that window: `tabs`,
 
 ## Get a test world listening
 
-One process per world. Quit a process only after its executable path is this repo's `build/Search.app` or a `.build/` binary, or its environment contains `SEARCH_PROBE`. Leave `/Applications/Search.app` alone. `killall`, quitting by the name Search, and `osascript` quit hit the installed app too: same bundle id, same process name. A `SEARCH_DEV=1 ./build.sh` build shows as `Search-<branch>` on a yellow icon in the Dock and ⌘Tab (see build.sh), but that name is only what people see: its process is still `Search`, so go by the executable path.
+One process per world. Quit a process only after its executable path is this repo's `build/Wayfinder.app` or a `.build/` binary, or its environment contains `SEARCH_PROBE`. Leave `/Applications/Wayfinder.app` alone. `killall`, quitting by the name Search, and `osascript` quit hit the installed app too: same bundle id, same process name. A `SEARCH_DEV=1 ./build.sh` build shows as `Search-<branch>` on a yellow icon in the Dock and ⌘Tab (see build.sh), but that name is only what people see: its process is still `Search`, so go by the executable path.
 
 1. `./bench --test tabs` (or `--world NAME`). A tab list means that world is listening. Do not launch another.
 2. If it prints `Search isn't listening`:
    - Nothing running for that world: `defaults write SUITE bench -bool true`, then `./fresh.sh again`. For a named world, `SEARCH_PROBE=NAME ./fresh.sh again`.
    - A test process is up but the socket is dead: write the default, terminate that pid, then `./fresh.sh again`. The switch is read at launch.
 3. Retry `./bench --test tabs` until it prints. Launch takes a moment.
-4. The suite is `com.officecommun.search.test`, or `com.officecommun.search.test.NAME` for a named world.
+4. The suite is `com.tanush.Wayfinder.test`, or `com.tanush.Wayfinder.test.NAME` for a named world.
 
 `./fresh.sh` with no argument deletes that world's folder, settings suite, and WebKit store, then opens it. The suite delete clears the `bench` switch, so a wipe has to be followed by the defaults write, a quit of the process it just opened, and `./fresh.sh again`. Wipe only when they asked for a clean browser.
 
 If `./bench tabs` (no flag) is not listening, ask them to turn on **Settings › General › Let a script drive Search**. Do not write defaults for the installed app.
 
-`./fresh.sh` builds `build/Search.app` when that bundle is missing. It opens a world
+`./fresh.sh` builds `build/Wayfinder.app` when that bundle is missing. It opens a world
 whose `bench` switch is on, hidden, since a test run that comes to the front trips the
 probe's guard and then refuses every command for the rest of that run. Write the switch
 before launching, not after, or the world opens in front and has to be thrown away.
@@ -122,7 +122,7 @@ Poll `extensions` until `busy` is `""`. Then read `loaded`, `errors`, and `repor
 
 ## From an MCP client
 
-`./bench-mcp` is the same bench as MCP tools, for an agent that has it registered (`claude mcp add search-bench -- /path/to/Search/bench-mcp`). It only drives test worlds it started itself: `open_session` with no world starts `build/Search.app` hidden in a fresh `agent-…` world and wipes it on `close_session`; with `world` it starts that test world and keeps it. A world that is already open, by `fresh.sh`, a test or anything else, gets `world_in_use`, and a second controller on the same world gets `world_busy`. Every request checks that the socket is still held by the process the session started; if not, `not_ours`.
+`./bench-mcp` is the same bench as MCP tools, for an agent that has it registered (`claude mcp add search-bench -- /path/to/Search/bench-mcp`). It only drives test worlds it started itself: `open_session` with no world starts `build/Wayfinder.app` hidden in a fresh `agent-…` world and wipes it on `close_session`; with `world` it starts that test world and keeps it. A world that is already open, by `fresh.sh`, a test or anything else, gets `world_in_use`, and a second controller on the same world gets `world_busy`. Every request checks that the socket is still held by the process the session started; if not, `not_ours`.
 
 - `open_tab` returns a page handle (`p2`); `read_page` returns element handles (`p2.s1.e4`) with role, name, value and box. The next `read_page`, or the page going elsewhere, ends them: `stale_element` means read again.
 - `click` is a real click (the bench's `tap`) after checking the element is attached, visible and not covered (`obscured` names what covers it). `type` sets the field and reports `verified`; `keys: true` types real key events. Password and card fields are never read back.

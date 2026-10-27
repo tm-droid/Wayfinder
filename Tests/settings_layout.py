@@ -86,11 +86,11 @@ def case_reachable(t):
     t.ok("about fifty rows in the sections", 45 <= len(shown) <= 70, len(shown))
     t.ok("ten sections", len(every["pages"]) == 10, every["pages"])
     # Old addresses land in the new sections.
-    sv.cmd({"do": "ui", "show": "search://settings/shortcuts"}); time.sleep(0.6)
-    t.ok("search://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",
+    sv.cmd({"do": "ui", "show": "wayfinder://settings/shortcuts"}); time.sleep(0.6)
+    t.ok("wayfinder://settings/shortcuts opens Keyboard & Mouse", settings()["settingsPage"] == "keyboard",
          settings()["settingsPage"])
-    sv.cmd({"do": "ui", "show": "search://settings/downloads"}); time.sleep(0.6)
-    t.ok("search://settings/downloads opens General", settings()["settingsPage"] == "general")
+    sv.cmd({"do": "ui", "show": "wayfinder://settings/downloads"}); time.sleep(0.6)
+    t.ok("wayfinder://settings/downloads opens General", settings()["settingsPage"] == "general")
 
 
 def case_defaults(t):

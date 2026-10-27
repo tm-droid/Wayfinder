@@ -23,7 +23,7 @@ final class PinDragTests: XCTestCase {
     override class func tearDown() {
         if let world = Store.world, world.hasPrefix("pin-drag-") {
             try? FileManager.default.removeItem(at: Store.folder)
-            UserDefaults.standard.removePersistentDomain(forName: "com.officecommun.search.test.\(world)")
+            UserDefaults.standard.removePersistentDomain(forName: "com.tanush.Wayfinder.test.\(world)")
         }
         super.tearDown()
     }

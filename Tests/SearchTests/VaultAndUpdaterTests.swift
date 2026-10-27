@@ -87,8 +87,8 @@ final class VaultAndUpdaterTests: XCTestCase {
     private func release(minimum: String?) -> Updater.Release {
         Updater.Release(
             version: "9.9", build: 9999,
-            archive: URL(string: "https://officecommun.com/search/Search.zip")!,
-            dmg: URL(string: "https://officecommun.com/search/Search.dmg")!,
+            archive: URL(string: "https://github.com/tm-droid/Wayfinder/releases/latest/download/Search.zip")!,
+            dmg: URL(string: "https://github.com/tm-droid/Wayfinder/releases/latest/download/Search.dmg")!,
             sha256: nil, notes: nil, minimumSystemVersion: minimum
         )
     }

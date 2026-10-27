@@ -1,7 +1,7 @@
 import AppKit
 
 // AppleScript, read-only, in Safari's words (#232): a window's `tabs` and
-// its `current tab`, and each tab's `URL` and `name`. Search.sdef says so,
+// its `current tab`, and each tab's `URL` and `name`. Wayfinder.sdef says so,
 // and build.sh puts it in the app. Nothing here changes anything, runs
 // anything in a page, or opens or closes a tab.
 //
