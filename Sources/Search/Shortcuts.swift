@@ -193,6 +193,7 @@ struct Command: Identifiable {
         Command("view.summarize", "Summarize Page", .view, nil) { $0.summarizePage() },
         Command("view.ask", "Ask About This Page…", .view, nil) { $0.askAboutPage() },
         Command("view.hide", "Hide Elements…", .view, KeyCombo("h", shift: true)) { $0.toggleHiding() },
+        Command("view.boost", "Boost This Site…", .view, nil) { Boosts.edit(in: $0) },
         Command("view.hidden", "Hidden on This Site…", .view, KeyCombo("u", shift: true)) { $0.reviewing.toggle() },
         Command("view.zoomIn", "Zoom In", .view, KeyCombo("+")) { $0.zoom(by: 1.1) },
         Command("view.zoomOut", "Zoom Out", .view, KeyCombo("-")) { $0.zoom(by: 1 / 1.1) },

@@ -602,6 +602,8 @@ struct SettingsPanel: View {
                 .frame(maxWidth: 340)
         case "media.click": Switch(on: $prefs.waitsForPlay)
         case "fullscreen.escapeTwice": Switch(on: $prefs.escapeTwice)
+        case "boosts.list": BoostsList(browser: browser)
+        case "boosts.private": BoostsPrivateSwitch()
         case "pageZoom":
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
