@@ -99,14 +99,70 @@ struct Boost: Codable, Identifiable, Equatable {
 
     /// Why it can't be kept, or nil.
     var problem: String? {
-        if hosts.isEmpty || hosts.contains(where: { Boost.normal($0).isEmpty || $0.contains("*") || $0.contains("/") || $0.contains(" ") }) {
-            return "Name the site (like example.com)."
+        if hosts.isEmpty || hosts.contains(where: { !Boost.validHost($0, subdomains: subdomains) }) {
+            return "Name a specific site (like example.com), not a whole domain ending or an address."
         }
         if hosts.count > Boosts.maxHosts { return "At most \(Boosts.maxHosts) sites." }
+        if name.count > Boosts.maxName || (font ?? "").count > Boosts.maxName { return "Name or font is too long." }
+        if hide.contains(where: { $0.count > Boosts.maxSelector }) { return "A hidden selector is too long." }
         if css.utf8.count > Boosts.maxCSS { return "CSS is over 64 KB." }
         if (js ?? "").utf8.count > Boosts.maxJS { return "Script is over 64 KB." }
         if hide.count > Boosts.maxHide { return "At most \(Boosts.maxHide) hidden things." }
+        if stylesheet.utf8.count > Boosts.maxSheet { return "Styles are over 128 KB all told." }
         return nil
+    }
+
+    // MARK: - which hosts may be named
+
+    /// Endings nobody owns, or that many unrelated sites share: a boost for
+    /// one would be a boost for them all. A small list, not the full one.
+    private static let publicSuffixes: Set<String> = [
+        "com", "net", "org", "io", "co", "edu", "gov", "mil", "int", "info", "biz", "app", "dev", "me", "tv", "us",
+        "uk", "de", "fr", "jp", "cn", "in", "ru", "br", "au", "ca", "xyz", "online", "site", "tech",
+        "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "com.au", "net.au", "org.au", "co.nz", "co.jp", "ne.jp",
+        "or.jp", "co.in", "com.br", "com.cn", "com.mx", "co.za", "co.kr",
+        "github.io", "gitlab.io", "pages.dev", "workers.dev", "vercel.app", "netlify.app", "herokuapp.com",
+        "blogspot.com", "appspot.com", "web.app", "firebaseapp.com", "cloudfront.net", "amazonaws.com",
+        "azurewebsites.net", "wordpress.com", "repl.co", "glitch.me", "fly.dev", "onrender.com",
+    ]
+
+    /// A specific site: letters, digits, dots and hyphens only, two or more
+    /// labels, not a public suffix, not `localhost`, and an address (which has
+    /// no subdomains) only on its own.
+    static func validHost(_ raw: String, subdomains: Bool) -> Bool {
+        let h = normal(raw)
+        guard !h.isEmpty, h.count <= Boosts.maxHostLength,
+              h.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "." || $0 == "-" })
+        else { return false }
+        let labels = h.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, !labels.contains(where: { $0.isEmpty || $0.hasPrefix("-") || $0.hasSuffix("-") }) else { return false }
+        if h == "localhost" || h.hasSuffix(".localhost") || publicSuffixes.contains(h) { return false }
+        if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return !subdomains }
+        return true
+    }
+
+    // MARK: - what an import may carry
+
+    /// Anything in a stylesheet that makes the browser fetch from elsewhere
+    /// is how a style leaks what a page holds (an attribute selector with a
+    /// `background: url(https://…?v)` per guess). From a file, none of it
+    /// stays but `data:` pictures; escapes go too, as they can spell `url(`.
+    static func withoutFetching(_ css: String) -> String {
+        var s = css.replacingOccurrences(of: "\\", with: "")
+        let rules = [
+            #"@import[^;\n]*;?"#,
+            #"@namespace[^;\n]*;?"#,
+            #"url\(\s*(?!['"]?\s*data:)[^)]*\)"#,
+            #"(-webkit-)?(image-set|cross-fade|image|src)\([^)]*\)"#,
+        ]
+        var before = ""
+        while before != s {
+            before = s
+            for rule in rules {
+                s = s.replacingOccurrences(of: rule, with: "none", options: [.regularExpression, .caseInsensitive])
+            }
+        }
+        return s
     }
 
     // MARK: - the stylesheet
@@ -155,6 +211,8 @@ struct BoostInjection {
 struct BoostCandidate: Identifiable {
     var boost: Boost
     var script: String?
+    /// The file asked for subdomains; they come in off unless ticked.
+    var wantsSubdomains = false
     var id: UUID { boost.id }
 }
 
@@ -167,6 +225,11 @@ final class Boosts: ObservableObject {
     nonisolated static let maxHosts = 10
     nonisolated static let maxHide = 50
     nonisolated static let maxBoosts = 200
+    nonisolated static let maxName = 100
+    nonisolated static let maxSelector = 500
+    nonisolated static let maxHostLength = 253
+    nonisolated static let maxSheet = 128 * 1024
+    nonisolated static let maxImportFile = 1024 * 1024
 
     /// Where boost scripts run: nowhere else, and not where Search's own
     /// messages are handled (`Web.world`), nor the page's.
@@ -200,7 +263,7 @@ final class Boosts: ObservableObject {
                 out.append(BoostInjection(source: Boosts.style(sheet, id: boost.id), atStart: true, world: Web.world, isScript: false))
             }
             if boost.hasScript, let js = boost.js {
-                out.append(BoostInjection(source: Boosts.wrap(js), atStart: false, world: Boosts.world, isScript: true))
+                out.append(BoostInjection(source: Boosts.wrap(js, hosts: boost.hosts, subdomains: boost.subdomains), atStart: false, world: Boosts.world, isScript: true))
             }
         }
         return out
@@ -222,8 +285,41 @@ final class Boosts: ObservableObject {
         """
     }
 
-    static func wrap(_ js: String) -> String {
-        "(function () { try {\n\(js)\n} catch (e) { console.error('Boost script failed', e); } })();"
+    /// A script runs only where its hostname is one it names, checked again
+    /// in the page: a redirect or a back-forward move to another site after
+    /// the scripts were chosen gets nothing.
+    static func wrap(_ js: String, hosts: [String], subdomains: Bool) -> String {
+        let list = (try? JSONEncoder().encode(hosts.map(Boost.normal))).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        return """
+        (function () { try {
+        var h = location.hostname.toLowerCase().replace(/\\.+$/, '').replace(/^www\\./, '');
+        if (!\(list).some(function (m) { return h === m || (\(subdomains) && h.endsWith('.' + m)); })) return;
+        \(js)
+        } catch (e) { console.error('Boost script failed', e); } })();
+        """
+    }
+
+    // MARK: - reading a script before allowing it
+
+    /// Marks that reorder how text reads.
+    static func hasBidiOverride(_ text: String) -> Bool {
+        text.unicodeScalars.contains { (0x202A...0x202E).contains($0.value) || (0x2066...0x2069).contains($0.value) }
+    }
+
+    /// Invisible and control characters written out as `\u{…}`, for review.
+    static func reviewText(_ text: String) -> (text: String, hidden: Int) {
+        var out = ""
+        var hidden = 0
+        for scalar in text.unicodeScalars {
+            let kind = scalar.properties.generalCategory
+            if (kind == .format || kind == .control) && scalar != "\n" && scalar != "\t" {
+                hidden += 1
+                out += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
+            } else {
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return (out, hidden)
     }
 
     // MARK: - keeping
@@ -304,16 +400,23 @@ final class Boosts: ObservableObject {
     /// Boosts read from a file, scripts held apart. Over-cap or siteless
     /// ones are left out. Nothing here is saved or run.
     static func parseImport(_ data: Data) -> [BoostCandidate] {
-        decode(data).prefix(maxBoosts).compactMap { original in
+        guard data.count <= maxImportFile else { return [] }
+        return decode(data).prefix(maxBoosts).compactMap { original -> BoostCandidate? in
             var boost = original
             boost.id = UUID()
             boost.hosts = boost.hosts.map(Boost.normal).filter { !$0.isEmpty }
+            let wants = boost.subdomains
+            boost.subdomains = false
+            let texts = [boost.name, boost.css, boost.js ?? ""] + boost.hide + [boost.font ?? ""]
+            if texts.contains(where: hasBidiOverride) { return nil }
+            boost.css = Boost.withoutFetching(boost.css)
+            boost.hide = boost.hide.filter { Boost.withoutFetching($0) == $0 }
             guard boost.problem == nil else { return nil }
             let script = boost.hasScript ? boost.js : nil
             boost.js = nil
             boost.enabled = false
             boost.imported = true
-            return BoostCandidate(boost: boost, script: script)
+            return BoostCandidate(boost: boost, script: script, wantsSubdomains: wants)
         }
     }
 
@@ -321,9 +424,10 @@ final class Boosts: ObservableObject {
     /// in `allowing` — the ones whose full source and sites were shown and
     /// agreed to.
     @discardableResult
-    func commitImport(_ candidates: [BoostCandidate], allowing: Set<UUID>) -> [Boost] {
+    func commitImport(_ candidates: [BoostCandidate], allowing: Set<UUID>, subdomains: Set<UUID> = []) -> [Boost] {
         var kept: [Boost] = []
         for var candidate in candidates {
+            candidate.boost.subdomains = subdomains.contains(candidate.id) && candidate.wantsSubdomains
             if allowing.contains(candidate.id) { candidate.boost.js = candidate.script }
             if save(candidate.boost) { kept.append(candidate.boost) }
         }

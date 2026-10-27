@@ -176,6 +176,7 @@ struct BoostImportSheet: View {
     let done: () -> Void
 
     @State private var allowed: Set<UUID> = []
+    @State private var subdomains: Set<UUID> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -187,14 +188,34 @@ struct BoostImportSheet: View {
                     ForEach(candidates) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.boost.name.isEmpty ? item.boost.hosts.joined(separator: ", ") : item.boost.name).font(.subheadline.bold())
-                            if let script = item.script {
-                                Text("Script for \(item.boost.hosts.joined(separator: ", "))\(item.boost.subdomains ? " and their subdomains" : "")")
-                                    .font(.caption).foregroundStyle(.orange)
+                            Text("Sites: \(item.boost.hosts.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
+                            if item.wantsSubdomains {
+                                Toggle("Also every subdomain of those sites", isOn: Binding(
+                                    get: { subdomains.contains(item.id) },
+                                    set: { if $0 { subdomains.insert(item.id) } else { subdomains.remove(item.id) } }
+                                ))
+                            }
+                            if !item.boost.stylesheet.isEmpty {
+                                Text("Styles (anything that fetches from elsewhere was removed)").font(.caption).foregroundStyle(.secondary)
                                 ScrollView {
-                                    Text(script).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                    Text(Boosts.reviewText(item.boost.stylesheet).text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .frame(height: 120).border(Color.secondary.opacity(0.3))
+                                .frame(height: 90).border(Color.secondary.opacity(0.3))
+                            }
+                            if let script = item.script {
+                                let shown = Boosts.reviewText(script)
+                                Text("Script — \(script.utf8.count) bytes, \(script.split(whereSeparator: \.isNewline).count) lines")
+                                    .font(.caption).foregroundStyle(.orange)
+                                if shown.hidden > 0 {
+                                    Text("Contains \(shown.hidden) invisible or control character\(shown.hidden == 1 ? "" : "s"), written out as \\u{…} below.")
+                                        .font(.caption.bold()).foregroundStyle(.red)
+                                }
+                                ScrollView {
+                                    Text(shown.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .frame(height: 260).border(Color.secondary.opacity(0.3))
                                 Toggle("Allow this script", isOn: Binding(
                                     get: { allowed.contains(item.id) },
                                     set: { if $0 { allowed.insert(item.id) } else { allowed.remove(item.id) } }
@@ -206,12 +227,12 @@ struct BoostImportSheet: View {
                     }
                 }
             }
-            .frame(height: 340)
+            .frame(height: 480)
             HStack {
                 Spacer()
                 Button("Cancel") { done() }.keyboardShortcut(.cancelAction)
                 Button("Bring In") {
-                    Boosts.shared.commitImport(candidates, allowing: allowed)
+                    Boosts.shared.commitImport(candidates, allowing: allowed, subdomains: subdomains)
                     done()
                 }.keyboardShortcut(.defaultAction)
             }
@@ -266,7 +287,11 @@ struct BoostsList: View {
     private func importFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
-        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Size first: nothing is read into memory from a file this large.
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? .max
+        guard size <= Boosts.maxImportFile else { browser.announce("That file is too large to be boosts"); return }
+        guard let data = try? Data(contentsOf: url) else { return }
         let found = Boosts.parseImport(data)
         guard !found.isEmpty else { browser.announce("No boosts in that file"); return }
         BoostSheet.review(found, browser: browser)
