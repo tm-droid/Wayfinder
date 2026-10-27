@@ -1156,6 +1156,11 @@ final class Tab: ObservableObject, Identifiable {
         for script in YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress)) {
             controller.addUserScript(script)
         }
+        // Boosts for this site (see Boost.swift): styles in the Veiling world,
+        // scripts in their own.
+        for injection in Boosts.shared.injections(host: Dusk.host(of: url ?? pageAddress), tab: id, shy: shy) {
+            controller.addUserScript(injection.userScript)
+        }
         guard !css.isEmpty else { return }
         controller.addUserScript(
             WKUserScript(source: Veiling.style(css), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)

@@ -8,6 +8,7 @@ final class LocalPageServer {
     struct Page {
         var status = "200 OK"
         var type: String
+        var headers: [String] = []
         var body: String
     }
 
@@ -122,6 +123,7 @@ final class LocalPageServer {
         let body = Data(page.body.utf8)
         let head = "HTTP/1.1 \(page.status)\r\n"
             + "Content-Type: \(page.type)\r\n"
+            + page.headers.map { $0 + "\r\n" }.joined()
             + "Content-Length: \(body.count)\r\n"
             + "Connection: close\r\n\r\n"
         _ = send(client, Data(head.utf8) + body)

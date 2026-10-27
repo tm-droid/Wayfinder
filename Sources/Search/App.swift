@@ -217,6 +217,9 @@ struct SearchApp: App {
                     .shortcut("view.hide")
                 Button("Hidden on This Site…") { browser.reviewing.toggle() }
                     .shortcut("view.hidden")
+                Button("Boost This Site…") { Boosts.edit(in: browser) }
+                    .shortcut("view.boost")
+                    .disabled(!(browser.active?.isWeb ?? false))
                 Divider()
                 Button("Zoom In") { browser.zoom(by: 1.1) }
                     .shortcut("view.zoomIn")
