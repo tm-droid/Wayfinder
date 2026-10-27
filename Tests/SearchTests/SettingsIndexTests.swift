@@ -11,7 +11,7 @@ final class SettingsIndexTests: XCTestCase {
         super.setUp()
     }
 
-    private let touched = ["sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
+    private let touched = ["pins.list", "sidebar", "sidebar.position", "tabs.sleep", SleepPace.key, "float.leave", "float.away",
                            "pins.home", "pins.peek", "links.peek", "links.peekClick", "pages.120", "pages.120.mode",
                            "swipe.history", "tabs.address", "links.show", "float.flicks", "spaces", "pins.list",
                            "newtab.floating"]
@@ -42,6 +42,10 @@ final class SettingsIndexTests: XCTestCase {
         fresh {
             let prefs = Preferences()
             XCTAssertTrue(prefs.pinsKeepSite)
+            XCTAssertTrue(prefs.listsPins)
+            Store.settings.set(false, forKey: "pins.list")
+            XCTAssertFalse(Preferences().listsPins, "a stored choice of squares is kept")
+            Store.settings.removeObject(forKey: "pins.list")
             XCTAssertEqual(prefs.fastPages, .onPower)
             XCTAssertTrue(prefs.holdsHistory)
             XCTAssertTrue(prefs.showsAddress)
@@ -49,7 +53,7 @@ final class SettingsIndexTests: XCTestCase {
             XCTAssertEqual(prefs.floatOwn, .tabs)
             XCTAssertEqual(prefs.peekChoice, .shift)
             // Nothing written just for reading them.
-            for key in ["pins.home", "pins.peek", "pages.120.mode", "swipe.history", "tabs.address"] {
+            for key in ["pins.list", "pins.home", "pins.peek", "pages.120.mode", "swipe.history", "tabs.address"] {
                 XCTAssertNil(Store.settings.object(forKey: key), key)
             }
         }
@@ -110,7 +114,9 @@ final class SettingsIndexTests: XCTestCase {
     func testSetUpLikeArcAndUndo() {
         fresh {
             let prefs = Preferences()
+            XCTAssertTrue(prefs.listsPins, "pinned rows are on by default")
             prefs.pinsKeepSite = false
+            prefs.listsPins = false
             let before = prefs.arcSnapshot
             XCTAssertFalse(prefs.looksLikeArc)
             XCTAssertEqual(prefs.setUpLikeArc().count, 5)

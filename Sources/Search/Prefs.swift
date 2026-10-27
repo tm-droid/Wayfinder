@@ -735,7 +735,9 @@ final class Preferences: ObservableObject {
         // existed; they are not asked to sit through it.
         welcomed = store.bool(forKey: "welcomed") || store.object(forKey: "glyph") != nil
         usesSpaces = store.bool(forKey: "spaces")
-        listsPins = store.bool(forKey: "pins.list")
+        // Arc's way — pinned rows under the essentials — unless the person
+        // chose squares: only a stored answer overrides the default.
+        listsPins = store.object(forKey: "pins.list") as? Bool ?? true
         // "Pins keep their site" is one switch over two keys (see
         // SettingsIndex): on when either was on, on by default when neither
         // was ever touched (Drice, 24 Oct 2026), off when one was turned

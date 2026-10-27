@@ -316,7 +316,7 @@ struct ImportPanel: View {
                     Switch(on: $wantsArc)
                 }
                 // Arc's pinned pages only keep their shape as pinned rows, and
-                // those are off until asked for. This is the moment someone
+                // those may be off (squares). This is the moment someone
                 // would ask, so the sheet offers the switch here, once, rather
                 // than bringing them in as tabs and leaving the setting to be
                 // found afterwards.

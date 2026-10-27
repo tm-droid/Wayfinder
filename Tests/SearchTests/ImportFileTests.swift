@@ -380,6 +380,9 @@ final class ImportFileTests: XCTestCase {
         let previousRecords = Store.settings.data(forKey: "import.records")
         let previousUsesSpaces = browser.prefs.usesSpaces
         let previousUsesTabGroups = browser.prefs.usesTabGroups
+        // This is the squares path: Arc's pinned list arrives as tabs asleep.
+        let previousListsPins = browser.prefs.listsPins
+        browser.prefs.listsPins = false
         let previousSpaces = browser.spaces
         let suffix = UUID().uuidString
         let workName = "Arc Engineering \(suffix)"
@@ -402,6 +405,7 @@ final class ImportFileTests: XCTestCase {
             Spaces.write(previousSpaces, profile: browser.profileID)
             browser.prefs.usesSpaces = previousUsesSpaces
             browser.prefs.usesTabGroups = previousUsesTabGroups
+            browser.prefs.listsPins = previousListsPins
             if let oldArcFile { try? oldArcFile.write(to: Arc.file, options: .atomic) }
             else {
                 try? FileManager.default.removeItem(at: Arc.file)
