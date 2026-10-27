@@ -1407,25 +1407,41 @@ struct TabPress: ViewModifier {
     /// letting go wasn't moved at all.
     static let travel: CGFloat = 4
 
+    /// Which button went down last on the row. macOS 27 reports a long press
+    /// for the right and other buttons too, and the closure below can't ask
+    /// the event (none is current when one is sent straight to a window), so
+    /// a view over the row notes it as the event passes through.
+    @State private var buttons = ButtonNote()
+
     func body(content: Content) -> some View {
-        content.onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
-            pressing?.wrappedValue = down
-            if !down {
-                // Given way to a drag, the button still down: what the press
-                // did stands until the release, so the release can't take
-                // it for a fresh click on the tab now on screen.
-                if NSEvent.pressedMouseButtons & 1 != 0 {
-                    TabPress.untilRelease { selected = false }
-                    return
-                }
-                // The row's release handler must see which press selected it.
-                DispatchQueue.main.async { selected = false }
+        content.overlay(ButtonSpy(note: buttons)).onLongPressGesture(minimumDuration: .infinity, maximumDistance: TabPress.travel, pressing: { down in
+            // The gesture is told before the event reaches the view over the
+            // row: ask once it has.
+            if down {
+                DispatchQueue.main.async { if buttons.left { press(true) } }
+            } else {
+                press(false)
+            }
+        }, perform: {})
+    }
+
+    private func press(_ down: Bool) {
+        pressing?.wrappedValue = down
+        if !down {
+            // Given way to a drag, the button still down: what the press
+            // did stands until the release, so the release can't take
+            // it for a fresh click on the tab now on screen.
+            if NSEvent.pressedMouseButtons & 1 != 0 {
+                TabPress.untilRelease { selected = false }
                 return
             }
-            guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
-            selected = !active
-            if selected { act() }
-        }, perform: {})
+            // The row's release handler must see which press selected it.
+            DispatchQueue.main.async { selected = false }
+            return
+        }
+        guard enabled, NSEvent.modifierFlags.intersection([.command, .control, .shift]).isEmpty else { return }
+        selected = !active
+        if selected { act() }
     }
 
     /// Once, at the left button's release.
@@ -1437,6 +1453,63 @@ struct TabPress: ViewModifier {
             DispatchQueue.main.async(execute: act)
             return event
         }
+    }
+}
+
+final class ButtonNote {
+    var left = true
+}
+
+/// Notes the button of each press on the row. The view itself takes no
+/// hit (a view over the row that did would hide the buttons in it from the
+/// hosting view); a recognizer on the hosting view sees every press first
+/// and fails at once, leaving the press to the row's own gestures.
+private struct ButtonSpy: NSViewRepresentable {
+    let note: ButtonNote
+
+    func makeNSView(context: Context) -> Spy {
+        let view = Spy()
+        view.note = note
+        return view
+    }
+
+    func updateNSView(_ view: Spy, context: Context) { view.note = note }
+
+    final class Spy: NSView {
+        var note: ButtonNote?
+        private var watch: Watch?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            watch.map { $0.view?.removeGestureRecognizer($0) }
+            watch = nil
+            guard let host = window?.contentView else { return }
+            let watch = Watch(spy: self)
+            host.addGestureRecognizer(watch)
+            self.watch = watch
+        }
+    }
+
+    private final class Watch: NSClickGestureRecognizer {
+        weak var spy: Spy?
+
+        init(spy: Spy) {
+            self.spy = spy
+            super.init(target: nil, action: nil)
+            buttonMask = 0x7
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        private func note(_ event: NSEvent, left: Bool) {
+            if let spy, spy.bounds.contains(spy.convert(event.locationInWindow, from: nil)) { spy.note?.left = left }
+            state = .failed
+        }
+
+        override func mouseDown(with event: NSEvent) { note(event, left: true) }
+        override func rightMouseDown(with event: NSEvent) { note(event, left: false) }
+        override func otherMouseDown(with event: NSEvent) { note(event, left: false) }
     }
 }
 
