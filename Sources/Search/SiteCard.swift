@@ -292,7 +292,7 @@ struct SiteCard: View {
     /// Settings › Privacy. Not while Shield is off everywhere. The page
     /// reloads, since the lists are only swapped at a navigation.
     @ViewBuilder private var trackers: some View {
-        if browser.prefs.shielded, let url = tab.pageAddress,
+        if !tab.shy, browser.prefs.shielded, let url = tab.pageAddress,
            ["http", "https"].contains(url.scheme?.lowercased()), let host = url.host() {
             Trackers(host: host) { browser.reload() }
         }
