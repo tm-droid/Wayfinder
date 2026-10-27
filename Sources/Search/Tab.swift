@@ -30,7 +30,7 @@ enum Web {
     @MainActor static func release(_ controller: WKUserContentController) {
         for name in [ScrollRelay.name, VeilRelay.name, FormRelay.name, ImageRelay.name, MediaKeys.name,
                      StoreRelay.name, PasskeyRelay.name, MiddleRelay.name, IconRelay.name, PopupGestureRelay.name, DuskRelay.name,
-                     TranslateRelay.name] {
+                     TranslateRelay.name, ReportRelay.name] {
             controller.removeScriptMessageHandler(forName: name, contentWorld: world)
             controller.removeScriptMessageHandler(forName: name, contentWorld: .page)
         }
@@ -337,6 +337,7 @@ final class Tab: ObservableObject, Identifiable {
 
     func didCommit() {
         popupGesture.clear()
+        reports.reset()
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -633,6 +634,7 @@ final class Tab: ObservableObject, Identifiable {
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
     private let middles = MiddleRelay()
+    let reports = ReportRelay()
     private let dusk = DuskRelay()
     var popupGesture = PopupGesture()
     /// Windows this page asked for and was refused, newest last, a few at
@@ -922,6 +924,7 @@ final class Tab: ObservableObject, Identifiable {
         hovered.tab = self
         controller.add(hovered, contentWorld: .defaultClient, name: HoveredLink.name)
         controller.add(middles, contentWorld: Web.world, name: MiddleRelay.name)
+        controller.add(reports, contentWorld: Web.world, name: ReportRelay.name)
         controller.add(dusk, contentWorld: Web.world, name: DuskRelay.name)
         controller.add(translateRelay, contentWorld: Web.world, name: TranslateRelay.name)
         PopupGestureRelay.install(on: controller)
@@ -1003,6 +1006,7 @@ final class Tab: ObservableObject, Identifiable {
         shop.tab = self
         iconChanges.tab = self
         middles.tab = self
+        reports.tab = self
         dusk.tab = self
         translateRelay.tab = self
         ears.watch(web) { [weak self] on in self?.heard(on) }
@@ -1096,6 +1100,12 @@ final class Tab: ObservableObject, Identifiable {
         controller.addUserScript(
             WKUserScript(source: MiddleRelay.watch, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
         )
+        // The privacy report's lookout (see Report.swift); never in a private tab.
+        if !shy {
+            controller.addUserScript(
+                WKUserScript(source: ReportRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+            )
+        }
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).
         controller.addUserScript(

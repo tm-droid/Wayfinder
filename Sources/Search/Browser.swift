@@ -1453,6 +1453,8 @@ final class Browser: NSObject, ObservableObject {
         // are the searches learned from sites visited (SiteSearch.swift).
         Favicons.shared.forgetAll()
         SiteSearch.forget()
+        // The privacy report lists the sites it saw trackers on (Report.swift).
+        PrivacyReport.shared.clear()
         announce("History cleared")
     }
 
