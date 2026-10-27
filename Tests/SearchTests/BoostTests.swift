@@ -142,6 +142,30 @@ final class BoostTests: XCTestCase {
         XCTAssertTrue(imported { $0.hide = ["a[x=y]", "b{background:url(http://e)}", "c url(http://e)"] }[0].boost.hide == ["a[x=y]"])
     }
 
+    func testImportedCSSThatStillFetchesOrIsBrokenIsDropped() {
+        for bad in ["a{background:url(https://evil.test/x", "a{background:url(data:image/png;base64,AA", "a{color:red", "a{content:\"x}", "a{color:red}}", "a[x=\"y\"{}", "a{b:(}", "/* open a{}"] {
+            let c = imported { $0.css = bad }
+            XCTAssertEqual(c.count, 1, bad)
+            XCTAssertEqual(c[0].boost.css, "", bad)
+            XCTAssertTrue(c[0].cssDropped, bad)
+        }
+        let ok = imported { $0.css = "a{background:url(data:image/png;base64,AA)} b[x=\"y\"]{color:red} /* ) */" }
+        XCTAssertFalse(ok[0].cssDropped)
+        XCTAssertFalse(ok[0].boost.css.isEmpty)
+        XCTAssertFalse(Boost.fetchesOrBroken("a{background:url('data:image/png;base64,AA')}"))
+        XCTAssertTrue(Boost.fetchesOrBroken("@IMPORT 'x';"))
+        XCTAssertTrue(Boost.fetchesOrBroken("a{background:-webkit-image-set(x 1x)}"))
+    }
+
+    func testReviewEscapesEverythingButPrintableASCII() {
+        for odd in ["\u{200B}", "\u{00A0}", "\u{2028}", "\u{115F}", "\u{1160}", "\u{3164}", "\u{FFA0}", "\u{FE0F}", "\u{E0041}", "é"] {
+            let shown = Boosts.reviewText("a\(odd)b")
+            XCTAssertEqual(shown.hidden, 1, odd)
+            XCTAssertTrue(shown.text.hasPrefix("a\\u{") && shown.text.hasSuffix("}b"), odd)
+        }
+        XCTAssertEqual(Boosts.reviewText("let a = 1;\n\tb").hidden, 0)
+    }
+
     func testHostValidation() {
         for bad in ["com", "co.uk", "github.io", "localhost", "foo", "a b.com", "*.example.com", "exa_mple.com", "例え.jp", "a..com", "-a.com", "x.localhost"] {
             XCTAssertFalse(Boost.validHost(bad, subdomains: false), bad)

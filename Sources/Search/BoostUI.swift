@@ -187,8 +187,12 @@ struct BoostImportSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(candidates) { item in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.boost.name.isEmpty ? item.boost.hosts.joined(separator: ", ") : item.boost.name).font(.subheadline.bold())
+                            Text(item.boost.name.isEmpty ? item.boost.hosts.joined(separator: ", ") : Boosts.reviewText(item.boost.name).text).font(.subheadline.bold())
                             Text("Sites: \(item.boost.hosts.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
+                            if item.cssDropped {
+                                Text("Its styles were left out: they fetched from elsewhere or could not be read safely.")
+                                    .font(.caption.bold()).foregroundStyle(.red)
+                            }
                             if item.wantsSubdomains {
                                 Toggle("Also every subdomain of those sites", isOn: Binding(
                                     get: { subdomains.contains(item.id) },
@@ -208,7 +212,7 @@ struct BoostImportSheet: View {
                                 Text("Script — \(script.utf8.count) bytes, \(script.split(whereSeparator: \.isNewline).count) lines")
                                     .font(.caption).foregroundStyle(.orange)
                                 if shown.hidden > 0 {
-                                    Text("Contains \(shown.hidden) invisible or control character\(shown.hidden == 1 ? "" : "s"), written out as \\u{…} below.")
+                                    Text("Contains \(shown.hidden) non-ASCII or control character\(shown.hidden == 1 ? "" : "s"), all written out as \\u{…} below.")
                                         .font(.caption.bold()).foregroundStyle(.red)
                                 }
                                 ScrollView {

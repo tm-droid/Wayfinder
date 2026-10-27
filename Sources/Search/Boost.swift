@@ -165,6 +165,40 @@ struct Boost: Codable, Identifiable, Equatable {
         return s
     }
 
+    /// True when, after stripping, the text still names anything that
+    /// fetches (bar a closed `data:` url) or its brackets and quotes don't
+    /// close: then no parser's recovery is trusted with it.
+    static func fetchesOrBroken(_ css: String) -> Bool {
+        let closedData = #"url\(\s*(?:"data:[^")]*"|'data:[^')]*'|data:[^)'"\s]*)\s*\)"#
+        let rest = css.replacingOccurrences(of: closedData, with: "", options: [.regularExpression, .caseInsensitive]).lowercased()
+        for token in ["url(", "image(", "image-set(", "cross-fade(", "src(", "@import", "@namespace"] where rest.contains(token) {
+            return true
+        }
+        var stack: [Character] = []
+        var quote: Character?
+        var i = css.startIndex
+        while i < css.endIndex {
+            let c = css[i]
+            let next = css.index(after: i)
+            if let q = quote {
+                if c == q { quote = nil } else if c == "\n" { return true }
+            } else if c == "/", next < css.endIndex, css[next] == "*" {
+                guard let end = css.range(of: "*/", range: css.index(after: next)..<css.endIndex) else { return true }
+                i = end.upperBound
+                continue
+            } else if c == "\"" || c == "'" {
+                quote = c
+            } else if "({[".contains(c) {
+                stack.append(c)
+            } else if ")}]".contains(c) {
+                let want: Character = c == ")" ? "(" : c == "}" ? "{" : "["
+                guard stack.popLast() == want else { return true }
+            }
+            i = next
+        }
+        return quote != nil || !stack.isEmpty
+    }
+
     // MARK: - the stylesheet
 
     /// Quick switches and the stylesheet, as one piece of CSS.
@@ -213,6 +247,8 @@ struct BoostCandidate: Identifiable {
     var script: String?
     /// The file asked for subdomains; they come in off unless ticked.
     var wantsSubdomains = false
+    /// Its styles could not be made safe to read, and were left out.
+    var cssDropped = false
     var id: UUID { boost.id }
 }
 
@@ -287,14 +323,15 @@ final class Boosts: ObservableObject {
 
     /// A script runs only where its hostname is one it names, checked again
     /// in the page: a redirect or a back-forward move to another site after
-    /// the scripts were chosen gets nothing.
+    /// the scripts were chosen gets nothing. The source goes in as a string
+    /// and is run only after the check, so it cannot close the wrapper.
     static func wrap(_ js: String, hosts: [String], subdomains: Bool) -> String {
         let list = (try? JSONEncoder().encode(hosts.map(Boost.normal))).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         return """
         (function () { try {
         var h = location.hostname.toLowerCase().replace(/\\.+$/, '').replace(/^www\\./, '');
         if (!\(list).some(function (m) { return h === m || (\(subdomains) && h.endsWith('.' + m)); })) return;
-        \(js)
+        (0, Function)(\(literal(js)))();
         } catch (e) { console.error('Boost script failed', e); } })();
         """
     }
@@ -306,13 +343,15 @@ final class Boosts: ObservableObject {
         text.unicodeScalars.contains { (0x202A...0x202E).contains($0.value) || (0x2066...0x2069).contains($0.value) }
     }
 
-    /// Invisible and control characters written out as `\u{…}`, for review.
+    /// Anything but printable ASCII written out as `\u{…}`, for review.
     static func reviewText(_ text: String) -> (text: String, hidden: Int) {
         var out = ""
         var hidden = 0
+        // Everything but printable ASCII (and newline, tab): invisible
+        // characters come in too many kinds to list, so none is trusted.
         for scalar in text.unicodeScalars {
-            let kind = scalar.properties.generalCategory
-            if (kind == .format || kind == .control) && scalar != "\n" && scalar != "\t" {
+            let v = scalar.value
+            if !((0x20...0x7E).contains(v) || v == 0x0A || v == 0x09) {
                 hidden += 1
                 out += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
             } else {
@@ -409,14 +448,18 @@ final class Boosts: ObservableObject {
             boost.subdomains = false
             let texts = [boost.name, boost.css, boost.js ?? ""] + boost.hide + [boost.font ?? ""]
             if texts.contains(where: hasBidiOverride) { return nil }
+            // Stripped, then judged on what is left: a parser may read what
+            // the patterns did not (an unclosed `url(` still fetches).
+            var cssDropped = false
             boost.css = Boost.withoutFetching(boost.css)
-            boost.hide = boost.hide.filter { Boost.withoutFetching($0) == $0 }
+            if Boost.fetchesOrBroken(boost.css) { boost.css = ""; cssDropped = true }
+            boost.hide = boost.hide.filter { Boost.withoutFetching($0) == $0 && !Boost.fetchesOrBroken($0) }
             guard boost.problem == nil else { return nil }
             let script = boost.hasScript ? boost.js : nil
             boost.js = nil
             boost.enabled = false
             boost.imported = true
-            return BoostCandidate(boost: boost, script: script, wantsSubdomains: wants)
+            return BoostCandidate(boost: boost, script: script, wantsSubdomains: wants, cssDropped: cssDropped)
         }
     }
 
