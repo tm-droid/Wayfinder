@@ -2,7 +2,7 @@
 """Convert EasyList/EasyPrivacy (ABP syntax) to WKContentRuleList JSON.
 
 Usage: python3 scripts/build-blocklists.py [--cache DIR]
-Writes Wayfinder/Resources/Blocklists/{easylist,easyprivacy}.json.
+Writes Sources/Search/Blocklists/{easylist,easyprivacy}.json.
 Original converter (no GPL code). Supports a common ABP subset; anything else is skipped and counted.
 """
 import json, re, sys, urllib.request
@@ -12,7 +12,7 @@ LISTS = {
     "easylist": "https://easylist.to/easylist/easylist.txt",
     "easyprivacy": "https://easylist.to/easylist/easyprivacy.txt",
 }
-OUT = Path(__file__).resolve().parent.parent / "Wayfinder/Resources/Blocklists"
+OUT = Path(__file__).resolve().parent.parent / "Sources/Search/Blocklists"
 MAX_RULES = 150_000
 BATCH = 400
 

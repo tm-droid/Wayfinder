@@ -248,6 +248,7 @@ struct SiteCard: View {
             sound
             grounded
             darken
+            trackers
             if prefs.keepsSitesAwake, tab.awakeHost != nil {
                 HStack(spacing: 0) {
                     Text("Keep This Site Awake").font(MenuMetrics.font)
@@ -284,6 +285,16 @@ struct SiteCard: View {
     @ViewBuilder private var darken: some View {
         if browser.canDusk(tab) {
             Darken(on: Binding(get: { tab.dusked }, set: { browser.dusk($0, tab) }))
+        }
+    }
+
+    /// Whether Shield blocks on the site, bound to the same per-site pause as
+    /// Settings › Privacy. Not while Shield is off everywhere. The page
+    /// reloads, since the lists are only swapped at a navigation.
+    @ViewBuilder private var trackers: some View {
+        if browser.prefs.shielded, let url = tab.pageAddress,
+           ["http", "https"].contains(url.scheme?.lowercased()), let host = url.host() {
+            Trackers(host: host) { browser.reload() }
         }
     }
 
@@ -358,6 +369,36 @@ struct SiteCard: View {
             .padding(.trailing, MenuMetrics.trailing)
             .frame(height: MenuMetrics.row)
             .onChange(of: on) { _, value in Autoplay.set(value, for: host) }
+        }
+    }
+
+    private struct Trackers: View {
+        let host: String
+        let reload: () -> Void
+        @State private var on: Bool
+
+        init(host: String, reload: @escaping () -> Void) {
+            self.host = host
+            self.reload = reload
+            _on = State(initialValue: !Shield.shared.isPaused(on: host))
+        }
+
+        var body: some View {
+            HStack(spacing: 0) {
+                Text("Block trackers on this site")
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .fixedSize()
+                Spacer(minLength: 24)
+                Switch(on: $on)
+            }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: MenuMetrics.row)
+            .onChange(of: on) { _, value in
+                Shield.shared.pause(host, !value)
+                reload()
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import WebKit
 
 // The ad blocker. No settings, no counter, no shield icon going green — it is
@@ -11,7 +12,11 @@ import WebKit
 final class Shield: ObservableObject {
     static let shared = Shield()
 
-    private(set) var list: WKContentRuleList?
+    /// Search's own list, then EasyList and EasyPrivacy (see Blocklists/).
+    /// Each is under WebKit's 150,000-rule cap, so none needs splitting.
+    private(set) var lists: [WKContentRuleList] = []
+    /// How many of the last compile's lists came from the store, not WebKit.
+    private(set) var reused = 0
     private var waiting: [WKUserContentController] = []
 
     /// Set the one time compiling the list didn't work. The toggle in
@@ -42,15 +47,26 @@ final class Shield: ObservableObject {
         Store.settings.set(Array(paused).sorted(), forKey: "shield.paused")
     }
 
-    /// Before each page: the list goes on or off for the site this tab is
+    /// Before each page: the lists go on or off for the site this tab is
     /// heading to. A rule list is enforced from the moment it is added, so
     /// doing this at the navigation is what makes "off for this site" true
-    /// for the whole page rather than for the second half of it.
+    /// for the whole page rather than for the second half of it. It is also
+    /// the allowlist: `ignore-previous-rules` only reaches rules in its own
+    /// list, so a site is let through by not adding any list at all.
     func tune(_ controller: WKUserContentController, for host: String?) {
-        guard let list else { return }
-        controller.remove(list)
-        if enabled, !isPaused(on: host) { controller.add(list) }
+        lists.forEach(controller.remove)
+        if enabled, !isPaused(on: host) { lists.forEach(controller.add) }
     }
+
+    /// Where EasyList and EasyPrivacy ship: the app's Resources, or the
+    /// source tree when run from `swift test`.
+    static let blocklists: URL? = {
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Blocklists")
+        return [Bundle.main.resourceURL?.appendingPathComponent("Blocklists"), source]
+            .compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("easylist.json").path) }
+    }()
 
     /// Third parties whose only job is to watch or to sell. First-party
     /// requests are untouched: a site's own scripts are the site.
@@ -105,8 +121,64 @@ final class Shield: ObservableObject {
     }
 
     func compile() {
-        guard list == nil else { return }
+        guard lists.isEmpty else { return }
+        Task { await build() }
+    }
+
+    /// Compiles each list, or takes it from the store: the store's name for
+    /// a list carries a hash of its text, so a launch recompiles only what
+    /// changed, and what no longer matches is deleted.
+    func build(store: WKContentRuleListStore? = .default(), blocklists: URL? = Shield.blocklists) async {
         trouble = nil
+        reused = 0
+        guard let store else {
+            trouble = "WebKit has nowhere to compile it"
+            return
+        }
+        guard let own = ownRules() else {
+            trouble = "Couldn't build the block list"
+            return
+        }
+        // Reading and hashing 16 MB is not for the main thread.
+        let sources: [(id: String, data: Data)] = await Task.detached {
+            var found = [("office-shield", own)]
+            for name in ["easylist", "easyprivacy"] {
+                if let folder = blocklists,
+                   let data = try? Data(contentsOf: folder.appendingPathComponent("\(name).json")) {
+                    found.append((name, data))
+                }
+            }
+            return found.map { name, data in
+                let hash = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
+                return ("\(name).\(hash)", data)
+            }
+        }.value
+
+        var compiled: [WKContentRuleList] = []
+        for source in sources {
+            if let hit = try? await store.contentRuleList(forIdentifier: source.id) {
+                compiled.append(hit)
+                reused += 1
+            } else if let made = try? await store.compileContentRuleList(
+                forIdentifier: source.id, encodedContentRuleList: String(decoding: source.data, as: UTF8.self)
+            ) {
+                compiled.append(made)
+            } else {
+                trouble = "Compiling the block list failed"
+            }
+        }
+        if compiled.count < 3, trouble == nil { trouble = "A block list is missing" }
+        let wanted = Set(sources.map(\.id))
+        for stale in await store.availableIdentifiers() ?? [] where !wanted.contains(stale) {
+            try? await store.removeContentRuleList(forIdentifier: stale)
+        }
+        lists = compiled
+        // Tabs that opened while this was still compiling get it now.
+        if enabled { waiting.forEach { c in compiled.forEach(c.add) } }
+        waiting = []
+    }
+
+    private func ownRules() -> Data? {
         var rules: [[String: Any]] = Shield.unwanted.map { domain in
             return [
                 "trigger": [
@@ -128,40 +200,13 @@ final class Shield: ObservableObject {
                 "action": ["type": "css-display-none", "selector": entry.selector],
             ]
         }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: rules),
-              let json = String(data: data, encoding: .utf8)
-        else {
-            trouble = "Couldn't build the block list"
-            return
-        }
-
-        guard let store = WKContentRuleListStore.default() else {
-            trouble = "WebKit has nowhere to compile it"
-            return
-        }
-        store.compileContentRuleList(
-            forIdentifier: "office-shield",
-            encodedContentRuleList: json
-        ) { [weak self] compiled, error in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard let compiled else {
-                    self.trouble = error?.localizedDescription ?? "Compiling the block list failed"
-                    return
-                }
-                self.list = compiled
-                // Tabs that opened while this was still compiling get it now.
-                if self.enabled { self.waiting.forEach { $0.add(compiled) } }
-                self.waiting = []
-            }
-        }
+        return try? JSONSerialization.data(withJSONObject: rules, options: .sortedKeys)
     }
 
     /// Every tab asks for it; whoever asks before it is ready is remembered.
     func protect(_ controller: WKUserContentController) {
-        if let list {
-            if enabled { controller.add(list) }
+        if !lists.isEmpty {
+            if enabled { lists.forEach(controller.add) }
         } else {
             waiting.append(controller)
         }
@@ -169,10 +214,9 @@ final class Shield: ObservableObject {
 
     /// Switched on or off for every page that is already open.
     func apply(to controllers: [WKUserContentController]) {
-        guard let list else { return }
         for controller in controllers {
-            controller.remove(list)
-            if enabled { controller.add(list) }
+            lists.forEach(controller.remove)
+            if enabled { lists.forEach(controller.add) }
         }
     }
 }
