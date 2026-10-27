@@ -169,32 +169,40 @@ struct Boost: Codable, Identifiable, Equatable {
     /// fetches (bar a closed `data:` url) or its brackets and quotes don't
     /// close: then no parser's recovery is trusted with it.
     static func fetchesOrBroken(_ css: String) -> Bool {
+        // Nothing outside ASCII: a combining mark or a zero-width character
+        // after `url` + `(` can hide the token from a scan by character
+        // while a parser still reads it. What is left is scanned by byte.
+        let bytes = Array(css.utf8)
+        if bytes.contains(where: { $0 > 0x7F }) { return true }
         let closedData = #"url\(\s*(?:"data:[^")]*"|'data:[^')]*'|data:[^)'"\s]*)\s*\)"#
-        let rest = css.replacingOccurrences(of: closedData, with: "", options: [.regularExpression, .caseInsensitive]).lowercased()
-        for token in ["url(", "image(", "image-set(", "cross-fade(", "src(", "@import", "@namespace"] where rest.contains(token) {
-            return true
+        let rest = css.replacingOccurrences(of: closedData, with: "", options: [.regularExpression, .caseInsensitive])
+        let lowered = Array(rest.utf8.map { $0 >= 0x41 && $0 <= 0x5A ? $0 + 32 : $0 })
+        for token in ["url(", "image(", "image-set(", "cross-fade(", "src(", "@import", "@namespace"] {
+            let t = Array(token.utf8)
+            if lowered.count >= t.count, (0...(lowered.count - t.count)).contains(where: { Array(lowered[$0..<($0 + t.count)]) == t }) { return true }
         }
-        var stack: [Character] = []
-        var quote: Character?
-        var i = css.startIndex
-        while i < css.endIndex {
-            let c = css[i]
-            let next = css.index(after: i)
+        var stack: [UInt8] = []
+        var quote: UInt8?
+        var i = 0
+        while i < bytes.count {
+            let c = bytes[i]
             if let q = quote {
-                if c == q { quote = nil } else if c == "\n" { return true }
-            } else if c == "/", next < css.endIndex, css[next] == "*" {
-                guard let end = css.range(of: "*/", range: css.index(after: next)..<css.endIndex) else { return true }
-                i = end.upperBound
+                if c == q { quote = nil } else if c == 0x0A { return true }
+            } else if c == 0x2F, i + 1 < bytes.count, bytes[i + 1] == 0x2A {
+                var j = i + 2
+                while j + 1 < bytes.count, !(bytes[j] == 0x2A && bytes[j + 1] == 0x2F) { j += 1 }
+                guard j + 1 < bytes.count else { return true }
+                i = j + 2
                 continue
-            } else if c == "\"" || c == "'" {
+            } else if c == 0x22 || c == 0x27 {
                 quote = c
-            } else if "({[".contains(c) {
+            } else if c == 0x28 || c == 0x7B || c == 0x5B {
                 stack.append(c)
-            } else if ")}]".contains(c) {
-                let want: Character = c == ")" ? "(" : c == "}" ? "{" : "["
+            } else if c == 0x29 || c == 0x7D || c == 0x5D {
+                let want: UInt8 = c == 0x29 ? 0x28 : c == 0x7D ? 0x7B : 0x5B
                 guard stack.popLast() == want else { return true }
             }
-            i = next
+            i += 1
         }
         return quote != nil || !stack.isEmpty
     }
@@ -451,9 +459,11 @@ final class Boosts: ObservableObject {
             // Stripped, then judged on what is left: a parser may read what
             // the patterns did not (an unclosed `url(` still fetches).
             var cssDropped = false
+            let nonASCII = { (s: String) in s.utf8.contains { $0 > 0x7F } }
+            let original = boost.css
             boost.css = Boost.withoutFetching(boost.css)
-            if Boost.fetchesOrBroken(boost.css) { boost.css = ""; cssDropped = true }
-            boost.hide = boost.hide.filter { Boost.withoutFetching($0) == $0 && !Boost.fetchesOrBroken($0) }
+            if nonASCII(original) || Boost.fetchesOrBroken(boost.css) { boost.css = ""; cssDropped = true }
+            boost.hide = boost.hide.filter { !nonASCII($0) && Boost.withoutFetching($0) == $0 && !Boost.fetchesOrBroken($0) }
             guard boost.problem == nil else { return nil }
             let script = boost.hasScript ? boost.js : nil
             boost.js = nil

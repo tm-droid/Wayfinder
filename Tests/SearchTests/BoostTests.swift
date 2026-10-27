@@ -149,6 +149,15 @@ final class BoostTests: XCTestCase {
             XCTAssertEqual(c[0].boost.css, "", bad)
             XCTAssertTrue(c[0].cssDropped, bad)
         }
+        for sneaky in ["a{background:url(\u{301}https://x/)}", "a{background:u\u{200B}rl(https://x/)}", "a{background:ｕｒｌ(https://x/)}", "a{content:\"é\"}"] {
+            let c = imported { $0.css = sneaky }
+            XCTAssertTrue(c[0].cssDropped, sneaky)
+            XCTAssertEqual(c[0].boost.css, "", sneaky)
+            XCTAssertTrue(imported { $0.hide = [sneaky] }[0].boost.hide.isEmpty, sneaky)
+        }
+        var local = Boost(name: "L", hosts: ["example.com"])
+        local.css = "a::after{content:\"é\"}"
+        XCTAssertTrue(local.stylesheet.contains("é"), "local CSS is untouched")
         let ok = imported { $0.css = "a{background:url(data:image/png;base64,AA)} b[x=\"y\"]{color:red} /* ) */" }
         XCTAssertFalse(ok[0].cssDropped)
         XCTAssertFalse(ok[0].boost.css.isEmpty)
