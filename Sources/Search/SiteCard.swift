@@ -249,6 +249,7 @@ struct SiteCard: View {
             grounded
             darken
             trackers
+            prevented
             if prefs.keepsSitesAwake, tab.awakeHost != nil {
                 HStack(spacing: 0) {
                     Text("Keep This Site Awake").font(MenuMetrics.font)
@@ -295,6 +296,20 @@ struct SiteCard: View {
         if !tab.shy, browser.prefs.shielded, let url = tab.pageAddress,
            ["http", "https"].contains(url.scheme?.lowercased()), let host = url.host() {
             Trackers(host: host) { browser.reload() }
+        }
+    }
+
+    /// What Shield is estimated to have kept off this page (see Report.swift),
+    /// the domains in the tooltip. Nothing to say, nothing shown.
+    @ViewBuilder private var prevented: some View {
+        let found = tab.reports.prevented
+        if !tab.shy, !found.isEmpty {
+            Text("\(found.count) tracker\(found.count == 1 ? "" : "s") prevented (estimated)")
+                .font(MenuMetrics.font)
+                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                .padding(.leading, MenuMetrics.text)
+                .frame(height: MenuMetrics.row, alignment: .leading)
+                .help(found.joined(separator: "\n"))
         }
     }
 

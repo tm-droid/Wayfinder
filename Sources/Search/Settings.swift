@@ -657,6 +657,7 @@ struct SettingsPanel: View {
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
         case "notifications.ask": Switch(on: $prefs.siteNotifications)
+        case "privacy.report": Pill("Clear report") { PrivacyReport.shared.clear() }
         case "privacy.forget": Pill("Forget choices") { browser.forgetCaptureChoices() }
         case "clear.history": Pill("Clear") { browser.clearHistory() }
         case "clear.cookies": Pill("Sign out of everything") { browser.clearSites() }
@@ -725,6 +726,8 @@ struct SettingsPanel: View {
                     ))
                 }
             }
+        case "privacy.report":
+            if !searched { PrivacyReportView().under() }
         case "privacy.forget":
             if !searched {
                 Group {

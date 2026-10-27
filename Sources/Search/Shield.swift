@@ -70,7 +70,7 @@ final class Shield: ObservableObject {
 
     /// Third parties whose only job is to watch or to sell. First-party
     /// requests are untouched: a site's own scripts are the site.
-    private static let unwanted = [
+    static let unwanted = [
         "doubleclick.net", "googlesyndication.com", "googleadservices.com",
         "googletagservices.com", "google-analytics.com", "googletagmanager.com",
         "adservice.google.com", "amazon-adsystem.com", "adnxs.com", "adsrvr.org",
