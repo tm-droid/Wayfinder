@@ -45,12 +45,14 @@ final class ShieldTests: XCTestCase {
         return folder
     }
 
-    /// Small stand-ins for the two lists: each blocks one path.
+    /// Small stand-ins for the two lists: each blocks one path. Keys are
+    /// sorted because the store names a list by a hash of its text, and a
+    /// dictionary's key order can differ between two writes of one rule.
     private func fixtureLists(_ folder: URL, blocking path: String = "ad\\.js") throws {
         for name in ["easylist", "easyprivacy"] {
             let rule = [["trigger": ["url-filter": name == "easylist" ? path : "track\\.js"],
                          "action": ["type": "block"]]]
-            try JSONSerialization.data(withJSONObject: rule).write(to: folder.appendingPathComponent("\(name).json"))
+            try JSONSerialization.data(withJSONObject: rule, options: .sortedKeys).write(to: folder.appendingPathComponent("\(name).json"))
         }
     }
 
