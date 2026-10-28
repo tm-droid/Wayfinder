@@ -2132,6 +2132,8 @@ final class Browser: NSObject, ObservableObject {
     /// sign-ins, its history and bookmarks.
     let profileID: UUID
     @Published var spaceID = Space.firstID
+    /// The Look editor is open (see SpaceDot).
+    @Published var lookEditing = false
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).

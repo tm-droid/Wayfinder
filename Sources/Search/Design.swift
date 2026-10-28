@@ -428,6 +428,8 @@ private struct PopoverGround: ViewModifier {
 /// card each, drawn by the stage that holds them (see PaneStage).
 struct CardEdge: ViewModifier {
     let on: Bool
+    /// The page's corners: the space's look sets them.
+    var radius = Metrics.cardRadius
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -436,14 +438,14 @@ struct CardEdge: ViewModifier {
     // nothing, and the edge and shadow are clear.
     func body(content: Content) -> some View {
         content
-            .clipShape(CardShape(on: on))
+            .clipShape(CardShape(on: on, radius: radius))
             .background {
-                CardShape(on: on)
+                CardShape(on: on, radius: radius)
                     .fill(on ? Palette.ground : .clear)
                     .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
             }
             .overlay {
-                CardShape(on: on)
+                CardShape(on: on, radius: radius)
                     .strokeBorder(Color.primary.opacity(on ? CardEdge.edge : 0), lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -458,11 +460,12 @@ struct CardEdge: ViewModifier {
 /// far past the page on every side.
 private struct CardShape: InsettableShape {
     let on: Bool
+    var radius = Metrics.cardRadius
     var inset: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         guard on else { return Path(rect.insetBy(dx: -10_000, dy: -10_000)) }
-        return RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .path(in: rect.insetBy(dx: inset, dy: inset))
     }
 

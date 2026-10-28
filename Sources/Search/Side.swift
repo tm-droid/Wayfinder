@@ -135,6 +135,8 @@ struct SideBar: View {
             }
         }
         .environment(\.greys, greys)
+        .environment(\.tint, browser.tint)
+        .tint(browser.tint.accent)
         .frame(width: prefs.columnWidth)
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
@@ -142,7 +144,10 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                landing ? greys.hover : onFrame ? Palette.frame : Palette.ground
+                // As cards the window draws the gradient across itself and
+                // the column lets it through (see App.window_).
+                landing ? greys.hover : onFrame ? (browser.tint.hasGround ? Color.clear : Palette.frame) : Palette.ground
+                if !onFrame { TintGround() }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

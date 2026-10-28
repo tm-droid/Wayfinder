@@ -481,6 +481,7 @@ struct ContentView: View {
             // With the tabs down the side, the ground the page's card and the
             // column sit on (see CardEdge).
             (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
+            if cards, fullscreenTab == nil { TintGround().environment(\.tint, browser.tint) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -496,7 +497,7 @@ struct ContentView: View {
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
             stage
-                .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+                .modifier(CardEdge(on: cards && !browser.prefs.splitView, radius: CGFloat(browser.tint.look.cornerRadius)))
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)
@@ -549,9 +550,9 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser, corner: cards ? Metrics.cardRadius : 0, immersed: fullscreenTab?.id)
+            SplitStage(browser: browser, corner: cards ? CGFloat(browser.tint.look.cornerRadius) : 0, immersed: fullscreenTab?.id)
         } else if let tab = browser.active {
-            Page(tab: tab, corner: cards ? Metrics.cardRadius : 0, browser: browser)
+            Page(tab: tab, corner: cards ? CGFloat(browser.tint.look.cornerRadius) : 0, browser: browser)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -794,6 +795,11 @@ struct ContentView: View {
 
     var body: some View {
         window_
+            // A space that wears Light or Dark overrides the app's own choice
+            // while it is on screen (see LookScheme).
+            .onChange(of: browser.tint.scheme, initial: true) { _, scheme in
+                browser.window?.appearance = scheme.appearance
+            }
             // The column folded away, and out again at the edge (see Fold.swift).
             .overlay(alignment: sideOnRight ? .trailing : .leading) {
                 if fullscreenTab == nil { Fold(browser: browser, prefs: browser.prefs) }
