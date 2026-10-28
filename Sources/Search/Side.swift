@@ -12,6 +12,13 @@ struct SideBar: View {
     /// On the window's ground, beside the page's card (see CardEdge): the
     /// ground's colour and no edge of its own, the card's edge being the line.
     var onFrame = false
+    /// Hosted in the window's own slot as cards, so the window's gradient runs
+    /// behind the column and it can leave its base clear. Folded away and
+    /// floating over the page, it keeps a solid base and its own gradient.
+    var seamless = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    private var lets: Bool { seamless && browser.tint.hasGround && !reduceTransparency && contrast != .increased }
     /// The greys for that ground, handed down to every row, pin and door.
     private var greys: Greys { onFrame ? .frame : .white }
 
@@ -135,6 +142,8 @@ struct SideBar: View {
             }
         }
         .environment(\.greys, greys)
+        .environment(\.tint, browser.tint)
+        .tint(browser.tint.accent)
         .frame(width: prefs.columnWidth)
         .frame(maxHeight: .infinity)
         // Rows on their way to or from another space stay in the column.
@@ -142,7 +151,10 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                landing ? greys.hover : onFrame ? Palette.frame : Palette.ground
+                // As cards the window draws the gradient across itself and
+                // the column lets it through (see App.window_).
+                landing ? greys.hover : lets ? Color.clear : onFrame ? Palette.frame : Palette.ground
+                if !lets { TintGround(space: browser.spaceID) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

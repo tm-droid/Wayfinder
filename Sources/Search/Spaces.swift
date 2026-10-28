@@ -35,6 +35,9 @@ struct Space: Codable, Identifiable, Equatable {
     /// The profile it belongs to (see Profiles.swift); nil for Personal,
     /// which every space from before profiles is in.
     var profile: UUID?
+    /// Its gradient, grain and other theme tokens (see SpaceLook.swift); nil
+    /// for a space that has none, which every space from before looks is.
+    var look: SpaceLook?
 
     var profileID: UUID { profile ?? Profile.personalID }
 
@@ -451,6 +454,22 @@ extension Browser {
         Spaces.write(spaces, profile: profileID)
     }
 
+    /// The look the window draws now: the space on screen, under the enabled mods.
+    var tint: Tint { Tint.of(spaces, active: spaceID, preview: lookPreview) }
+
+    /// Saved, and followed by every window.
+    func setSpaceLook(_ id: UUID, to look: SpaceLook?) {
+        guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
+        spaces[at].look = look?.isEmpty == true ? nil : look
+        lookPreview = nil
+        Spaces.write(spaces, profile: profileID)
+    }
+
+    /// Shown in this window only, for the editor's live preview; not saved.
+    func previewSpaceLook(_ id: UUID, _ look: SpaceLook?) {
+        lookPreview = (id, look)
+    }
+
     func setSpaceDownloads(_ id: UUID, to folder: URL?) {
         guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[at].downloads = folder?.path
@@ -569,6 +588,9 @@ struct SpaceDot: View {
         }
         .animation(Motion.quick, value: hovering)
         .animation(Motion.quick, value: named)
+        .popover(isPresented: $browser.lookEditing, arrowEdge: browser.prefs.sidebar ? .trailing : .bottom) {
+            LookEditor(browser: browser) { browser.lookEditing = false }
+        }
     }
 
     private func name() {
@@ -645,6 +667,7 @@ enum SpaceMenu {
         let icon = NSMenuItem(title: "Icon", action: nil, keyEquivalent: "")
         icon.submenu = icons
         menu.addItem(icon)
+        menu.addItem(item("Edit Look…") { browser.lookEditing = true })
         // The order is the swipe's, and ⌃1–⌃9's.
         if let at = browser.spaces.firstIndex(where: { $0.id == here.id }) {
             if at > 0 { menu.addItem(item("Move Left") { browser.moveSpace(here.id, to: at - 1) }) }

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 // A space's look as theme tokens, Zen/Arc style: a gradient behind the
 // sidebar, grain, an accent, and a few shape and type choices.
@@ -19,12 +19,29 @@ enum LookFont: String, Codable, CaseIterable {
     case system, rounded, serif, mono
 }
 
+/// Whether the space wears the app's light or dark, or follows the app's own choice.
+enum LookScheme: String, Codable, CaseIterable {
+    case auto, light, dark
+
+    /// The window's own appearance; nil for Auto, which leaves it to the app.
+    var appearance: NSAppearance? {
+        switch self {
+        case .auto: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 struct SpaceLook: Codable, Equatable {
     /// Two or three colours as "#RRGGBB" or "#RRGGBBAA".
     var gradient: [String]?
     /// Degrees, 0 pointing up and turning clockwise.
     var angle: Double?
     var grain: Double?
+    /// How much of the window's own colour shows through the gradient.
+    var transparency: Double?
+    var scheme: LookScheme?
     var accent: String?
     var cornerRadius: Double?
     var density: LookDensity?
@@ -34,12 +51,15 @@ struct SpaceLook: Codable, Equatable {
     var webInset: Double?
     var webBorder: Double?
 
-    init(gradient: [String]? = nil, angle: Double? = nil, grain: Double? = nil, accent: String? = nil,
+    init(gradient: [String]? = nil, angle: Double? = nil, grain: Double? = nil, transparency: Double? = nil, scheme: LookScheme? = nil,
+         accent: String? = nil,
          cornerRadius: Double? = nil, density: LookDensity? = nil, tabTextSize: Double? = nil,
          font: LookFont? = nil, webInset: Double? = nil, webBorder: Double? = nil) {
         self.gradient = gradient
         self.angle = angle
         self.grain = grain
+        self.transparency = transparency
+        self.scheme = scheme
         self.accent = accent
         self.cornerRadius = cornerRadius
         self.density = density
@@ -56,6 +76,8 @@ struct SpaceLook: Codable, Equatable {
         gradient = try? c.decodeIfPresent([String].self, forKey: .gradient)
         angle = try? c.decodeIfPresent(Double.self, forKey: .angle)
         grain = try? c.decodeIfPresent(Double.self, forKey: .grain)
+        transparency = try? c.decodeIfPresent(Double.self, forKey: .transparency)
+        scheme = try? c.decodeIfPresent(LookScheme.self, forKey: .scheme)
         accent = try? c.decodeIfPresent(String.self, forKey: .accent)
         cornerRadius = try? c.decodeIfPresent(Double.self, forKey: .cornerRadius)
         density = try? c.decodeIfPresent(LookDensity.self, forKey: .density)
@@ -84,6 +106,8 @@ struct SpaceLook: Codable, Equatable {
         var gradient: [String]
         var angle: Double
         var grain: Double
+        var transparency: Double
+        var scheme: LookScheme
         var accent: String?
         var cornerRadius: Double
         var density: LookDensity
@@ -93,7 +117,7 @@ struct SpaceLook: Codable, Equatable {
         var webBorder: Double
     }
 
-    static let defaults = Resolved(gradient: [], angle: 135, grain: 0, accent: nil, cornerRadius: 10, density: .regular,
+    static let defaults = Resolved(gradient: [], angle: 135, grain: 0, transparency: 0.3, scheme: .auto, accent: nil, cornerRadius: 10, density: .regular,
                                    tabTextSize: 13, font: .system, webInset: 0, webBorder: 0)
 
     /// Defaults, then `layers` in order (later wins), clamped. Pass the enabled
@@ -104,6 +128,8 @@ struct SpaceLook: Codable, Equatable {
             if let stops = layer.cleanGradient { r.gradient = stops }
             if let v = layer.angle, v.isFinite { r.angle = clamp(v, angleRange) }
             if let v = layer.grain, v.isFinite { r.grain = clamp(v, grainRange) }
+            if let v = layer.transparency, v.isFinite { r.transparency = clamp(v, grainRange) }
+            if let v = layer.scheme { r.scheme = v }
             if let v = layer.accent.flatMap(normalizedHex) { r.accent = v }
             if let v = layer.cornerRadius, v.isFinite { r.cornerRadius = clamp(v, cornerRadiusRange) }
             if let v = layer.density { r.density = v }

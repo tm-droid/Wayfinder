@@ -2132,6 +2132,10 @@ final class Browser: NSObject, ObservableObject {
     /// sign-ins, its history and bookmarks.
     let profileID: UUID
     @Published var spaceID = Space.firstID
+    /// The Look editor is open (see SpaceDot).
+    @Published var lookEditing = false
+    /// The editor's unsaved look for a space, drawn over the saved one and never written.
+    @Published var lookPreview: (id: UUID, look: SpaceLook?)?
     var parked: [UUID: Parked] = [:]
     /// How far the column's rows have followed two fingers sideways, and
     /// whether the card for a new space stands in for them (see SpaceSwipe).
@@ -2153,7 +2157,10 @@ final class Browser: NSObject, ObservableObject {
     var inScene = false
     /// Its window, once it has one.
     weak var window: NSWindow? {
-        didSet { if window != nil { shut = false } }
+        didSet {
+            if window != nil { shut = false }
+            window?.appearance = tint.scheme.appearance
+        }
     }
     /// Its window closed and kept: the last one, closed with the app running.
     /// Its tabs sleep meanwhile (see sleepShut); back, the ones it shows wake.
