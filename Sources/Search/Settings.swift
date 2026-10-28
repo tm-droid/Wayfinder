@@ -331,6 +331,9 @@ struct SettingsPanel: View {
             ExtensionsPage(browser: browser)
         case .ai:
             if AI.shipped { AISettings(browser: browser, prefs: prefs) }
+        case .spaces:
+            groups(of: page)
+            LinkRoutingSettings(browser: browser)
         default:
             groups(of: page)
         }

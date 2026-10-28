@@ -160,7 +160,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         window.minSize = NSSize(width: 420, height: 320)
         window.delegate = self
         let id = tab.id
-        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, keep: { [weak self] in self?.keep() })
+        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, spaces: Shared.prefs.usesSpaces ? browser.spaces : [],
+                                    keepIn: { [weak self] in self?.keep(inSpace: $0) }, keep: { [weak self] in self?.keep() })
             .overlay {
                 TabSwitcherOverlay(
                     switcher: LittleWindow.switcher,
@@ -301,7 +302,7 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     /// pins), and in front; the small window goes. The one time a link in
     /// a small window brings the browser's window: the window in front, or
     /// one brought back for it.
-    func keep() {
+    func keep(inSpace space: UUID? = nil) {
         let browser = Browsers.ensureWindow()
         kept = true
         // In the row, back from the first page goes nowhere, as any tab's.
@@ -309,6 +310,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         // As a tab moved from another window is: this window's delegate,
         // and this window's space, with its sign-ins.
         browser.receive(tab)
+        // Open in Space…: on to the space chosen, as Move to Space does.
+        if let space { browser.move(tab, toSpace: space) }
         window.close()
         guard let front = browser.window else { return }
         // Put away in the Dock, it stayed there (#95).
@@ -339,6 +342,9 @@ struct LittleView: View {
     @ObservedObject var tab: Tab
     /// Its window's line at the foot; an extension's popup has none.
     var note: LittleNote? = nil
+    /// The spaces Open in Space… offers, and what it does with the one picked.
+    var spaces: [Space] = []
+    var keepIn: ((UUID) -> Void)? = nil
     let keep: (() -> Void)?
 
     var body: some View {
@@ -355,6 +361,14 @@ struct LittleView: View {
                     // registrable domain, which a cut tail would lose.
                     .truncationMode(.head)
                 Spacer(minLength: 0)
+                if let keepIn, spaces.count > 1 {
+                    Menu("Open in Space…") {
+                        ForEach(spaces) { space in Button(space.name) { keepIn(space.id) } }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .font(.system(size: 11.5))
+                }
                 if let keep {
                     Pill("Open in Wayfinder", action: keep)
                         .help("Open in Wayfinder   ⌘O")
