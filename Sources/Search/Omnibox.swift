@@ -206,8 +206,12 @@ struct Omnibox: View {
                     Image(systemName: "bookmark")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.muted)
-                case .command:
+                case .command, .action:
                     Image(systemName: "command")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                case .setting:
+                    Image(systemName: "gearshape")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.muted)
                 default:
@@ -228,6 +232,13 @@ struct Omnibox: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
+                // A tab of another space says which: Return goes there.
+                if let badge = offer.badge {
+                    Text(badge)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -554,6 +565,11 @@ struct AddressField: NSViewRepresentable {
             switch command {
             case #selector(NSResponder.insertNewline(_:)):
                 browser.submit()
+                return true
+            case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+                // ⌥Return: the grey rest of the address, taken.
+                guard browser.ending != nil else { return false }
+                browser.acceptEnding()
                 return true
             case #selector(NSResponder.moveDown(_:)):
                 browser.walk(1)

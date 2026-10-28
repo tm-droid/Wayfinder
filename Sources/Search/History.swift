@@ -12,6 +12,9 @@ struct Suggestion: Identifiable, Equatable {
     let kind: Kind
     /// Set when this is a page you already have open somewhere.
     var tab: UUID?
+    /// For a tab of another space: that space, and the name its row wears.
+    var space: UUID?
+    var badge: String?
 
     enum Kind: Equatable {
         /// A page that is open right now.
@@ -29,6 +32,10 @@ struct Suggestion: Identifiable, Equatable {
         case suggested
         /// Not a place either: something the app itself does.
         case command(AddressCommand)
+        /// A menu command, by its `Command.id` (see CommandBar.swift).
+        case action(String)
+        /// A row of Settings, by its `SettingsItem.id`.
+        case setting(String)
 
         var isCommand: Bool { if case .command = self { return true }; return false }
     }
@@ -37,6 +44,9 @@ struct Suggestion: Identifiable, Equatable {
     /// ("Settings" typed with its capital), and two rows can't share a name.
     var id: String {
         if kind.isCommand { return "command " + key }
+        if case .action(let id) = kind { return "action " + id }
+        if case .setting(let id) = kind { return "setting " + id }
+        if kind == .open, let tab { return "tab " + tab.uuidString }
         if case .suggested = kind { return "suggested " + key }
         if case .visited = kind { return History.identity(for: url) }
         if case .bookmark = kind { return History.identity(for: url) }

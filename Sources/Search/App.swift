@@ -1483,6 +1483,11 @@ struct ContentView: View {
             if browser.editingTab != nil { return true }
             // "red" then Tab: Reddit, in the field (SiteSearch.swift).
             if browser.fieldShowing, !flags.contains(.shift), browser.lockSiteOffer() { return true }
+            // Tab takes the grey rest of the address; with none, it walks the list.
+            if browser.fieldShowing, !flags.contains(.shift), browser.ending != nil {
+                browser.acceptEnding()
+                return true
+            }
             if browser.fieldShowing, !browser.offers.isEmpty {
                 browser.walk(flags.contains(.shift) ? -1 : 1)
                 return true

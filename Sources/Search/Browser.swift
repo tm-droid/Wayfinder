@@ -377,7 +377,7 @@ final class Browser: NSObject, ObservableObject {
     /// True while the field is a switcher rather than an address bar. ⌘K asks
     /// one question — which of the pages I already have open — and answering it
     /// with somewhere you went last week would be answering a different one.
-    @Published private(set) var summoning = false
+    @Published var summoning = false
     /// True between the first ⌘K and letting go of ⌘.
     var cycling = false
 
@@ -5873,7 +5873,7 @@ final class Browser: NSObject, ObservableObject {
             engineWords = ("", [])
         }
         guard !summoning else {
-            offers = openPages(matching: typed)
+            offers = barOffers(for: typed)
             ending = nil
             // The most recent page is already chosen, so ⌘K then Return is the
             // whole gesture.
@@ -5900,6 +5900,14 @@ final class Browser: NSObject, ObservableObject {
             siteOffer = nil
             return
         }
+        // "> ": actions and Settings only.
+        if typed.trimmingCharacters(in: .whitespaces).hasPrefix(">") {
+            siteOffer = nil
+            offers = barOffers(for: typed)
+            ending = nil
+            picked = offers.isEmpty ? nil : 0
+            return
+        }
         // "red": Reddit's search, a Tab away.
         let site = prefs.searchesSites && !summoning
             ? SiteSearch.match(typed, learnedToo: profileID == Profile.personalID) { [history] in history.visits(to: $0.map(\.host)) }
@@ -5907,6 +5915,12 @@ final class Browser: NSObject, ObservableObject {
         if siteOffer != site { siteOffer = site }
 
         (offers, ending) = placeOffers(for: typed)
+        // ⌘T's field (a blank tab, or the floating one) finds across everything:
+        // the ranked rows stand in for the three places, with the command and
+        // the search of the plain list kept around them.
+        if launching || active?.isBlank == true {
+            offers = offers.filter { $0.kind.isCommand } + barOffers(for: typed) + offers.filter { $0.kind == .search }
+        }
         // A row that was picked stops being the right row the moment the
         // question changes.
         picked = nil
@@ -6023,42 +6037,17 @@ final class Browser: NSObject, ObservableObject {
         return (list, ending)
     }
 
-    /// What is open, most recently looked at first, filtered by what has been
-    /// typed. On an empty field this is the whole point of the summon: it is
-    /// the tab strip, except you read it only when you ask for it.
-    private func openPages(matching typed: String) -> [Suggestion] {
-        let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
-        return tabs
-            .filter { $0.id != activeID && !$0.isBlank }
-            .filter { tab in
-                guard !needle.isEmpty else { return true }
-                let address = tab.address.map { Address.pretty($0) } ?? ""
-                return tab.label.lowercased().contains(needle) || address.contains(needle)
-            }
-            .sorted { $0.touched > $1.touched }
-            .prefix(needle.isEmpty ? 6 : 3)
-            .compactMap { tab in
-                guard let url = tab.address else { return nil }
-                return Suggestion(
-                    key: tab.label,
-                    title: Address.pretty(url),
-                    url: url,
-                    kind: .open,
-                    tab: tab.id
-                )
-            }
-    }
-
     /// A row clicked in the list, taken directly rather than through the
     /// keyboard's selection. The pointer and the arrow keys are answering the
     /// same question but must not share an answer: a list that appears under a
     /// resting cursor would otherwise rewrite the field before you had moved.
     func take(_ offer: Suggestion) {
         summoning = false
+        if perform(offer) { return }
         if case .command(let command) = offer.kind {
             command.run(on: self)
-        } else if let id = offer.tab, let tab = tabs.first(where: { $0.id == id }) {
-            select(tab)
+        } else if offer.tab != nil, switchTo(offer) {
+            return
         } else if launching {
             open(offer.url, foreground: true, from: active)
         } else {
@@ -6159,21 +6148,22 @@ final class Browser: NSObject, ObservableObject {
     /// tab you were on is left as it was, behind it unless `front` (⇧⌘Return)
     /// asks to go there.
     func submit(aside: Bool = false, front: Bool = false) {
-        // A page already open is switched to, not opened again.
-        if let picked, offers.indices.contains(picked),
-           let id = offers[picked].tab,
-           let tab = tabs.first(where: { $0.id == id }) {
-            summoning = false
+        // The row picked, or else the top one when it is a page already open:
+        // that is switched to, not opened again (Yab). ⌘Return and ⇧⌘Return
+        // open it in a tab of its own instead.
+        let row = picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }
+            ?? offers.first.flatMap { $0.kind == .open ? $0 : nil }
+        if let row, perform(row) { return }
+        if let row, row.kind == .open, !aside {
             // From the empty page of a pair: that tab comes into the pair.
-            if let blank = active, blank.isBlank, split(for: blank) != nil, !aside,
+            if let blank = active, blank.isBlank, split(for: blank) != nil,
+               let tab = tabs.first(where: { $0.id == row.tab }),
                tab.shy == blank.shy, split(for: tab)?.contains(blank.id) != true {
+                summoning = false
                 fill(blank, with: tab)
                 return
             }
-            select(tab)
-            editing = false
-            typed = ""
-            return
+            if switchTo(row) { return }
         }
 
         // The switcher proposes nothing but pages you have open. It still has
@@ -6201,8 +6191,8 @@ final class Browser: NSObject, ObservableObject {
         }
 
         let target: URL?
-        if let picked, offers.indices.contains(picked) {
-            target = offers[picked].url
+        if let row {
+            target = row.url
         } else if ending != nil {
             target = Address.url(from: completed)
         } else {

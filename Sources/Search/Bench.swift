@@ -1271,6 +1271,8 @@ final class Bench {
                 case .bookmark: "bookmark"
                 case .known: "known"
                 case .command: "command"
+                case .action: "action"
+                case .setting: "setting"
                 }
             }
             func state(_ extra: [String: Any] = [:]) -> [String: Any] {
