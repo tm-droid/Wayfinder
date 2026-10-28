@@ -95,6 +95,22 @@ enum ModError: Error, Equatable {
     case authorTooLong
     case badVersion
     case flagOutOfRange(ModFlag)
+    case tooManyPrefs
+    case pref(String, ModPref.Problem)
+
+    /// What is wrong, in plain words.
+    var message: String {
+        switch self {
+        case .badID: return "The id must be two or more lowercase parts joined by dots, like com.example.calm."
+        case .emptyName: return "The mod needs a name."
+        case .nameTooLong: return "The name is longer than \(Mod.maxNameLength) characters."
+        case .authorTooLong: return "The author is longer than \(Mod.maxAuthorLength) characters."
+        case .badVersion: return "The version must be numbers separated by dots, like 1.2.3."
+        case .flagOutOfRange(let flag): return "The value for \(flag.rawValue) is outside its allowed range."
+        case .tooManyPrefs: return "A mod can have at most \(Mod.maxPrefs) preferences."
+        case .pref(let id, let problem): return "Preference \(id.isEmpty ? "(no id)" : "\"\(id)\""): \(problem.message)"
+        }
+    }
 }
 
 struct Mod: Codable, Equatable, Identifiable {
@@ -105,12 +121,18 @@ struct Mod: Codable, Equatable, Identifiable {
     var version: String
     var look: SpaceLook?
     var flags: ModFlags?
+    /// Choices the user can make; each can set one flag (see ModPref).
+    var prefs: [ModPref]
 
     static let maxNameLength = 60
     static let maxAuthorLength = 80
+    static let maxPrefs = 8
+    /// The largest manifest read, from a file or anywhere else.
+    static let maxManifestBytes = 64 * 1024
 
     init(id: String, name: String, author: String = "", version: String = "1.0.0",
-         look: SpaceLook? = nil, flags: ModFlags? = nil) {
+         look: SpaceLook? = nil, flags: ModFlags? = nil, prefs: [ModPref] = []) {
+        self.prefs = prefs
         self.id = id
         self.name = name
         self.author = author
@@ -122,7 +144,7 @@ struct Mod: Codable, Equatable, Identifiable {
     /// Strict: any key but the ones below throws, so nothing unreviewed rides along.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: ModKey.self)
-        let known: Set<String> = ["id", "name", "author", "version", "look", "flags"]
+        let known: Set<String> = ["id", "name", "author", "version", "look", "flags", "prefs"]
         for key in c.allKeys where !known.contains(key.stringValue) {
             throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "unknown key \(key.stringValue)")
         }
@@ -132,6 +154,7 @@ struct Mod: Codable, Equatable, Identifiable {
         version = try c.decodeIfPresent(String.self, forKey: ModKey("version")) ?? "1.0.0"
         look = try c.decodeIfPresent(SpaceLook.self, forKey: ModKey("look"))
         flags = try c.decodeIfPresent(ModFlags.self, forKey: ModKey("flags"))
+        prefs = try c.decodeIfPresent([ModPref].self, forKey: ModKey("prefs")) ?? []
     }
 
     /// Everything wrong with it, empty if it is sound.
@@ -146,6 +169,11 @@ struct Mod: Codable, Equatable, Identifiable {
             if let v = flags.dimUnloadedTabs, !(ModFlags.dimRange ~= v) { errors.append(.flagOutOfRange(.dimUnloadedTabs)) }
             if let v = flags.tabTextSize, !(ModFlags.tabTextSizeRange ~= v) { errors.append(.flagOutOfRange(.tabTextSize)) }
         }
+        if prefs.count > Mod.maxPrefs { errors.append(.tooManyPrefs) }
+        var seen = Set<String>()
+        for pref in prefs.prefix(Mod.maxPrefs) {
+            errors += pref.problems(duplicate: !seen.insert(pref.id).inserted).map { .pref(pref.id, $0) }
+        }
         return errors
     }
 
@@ -153,9 +181,20 @@ struct Mod: Codable, Equatable, Identifiable {
     enum LoadFailure: Error, Equatable {
         case unreadable(String)
         case invalid([ModError])
+
+        /// What is wrong, in plain words.
+        var message: String {
+            switch self {
+            case .unreadable(let why): return "This is not a mod Wayfinder can read: \(why)."
+            case .invalid(let errors): return errors.map(\.message).joined(separator: " ")
+            }
+        }
     }
 
     static func load(_ data: Data) -> Result<Mod, LoadFailure> {
+        guard data.count <= maxManifestBytes else {
+            return .failure(.unreadable("The file is over \(maxManifestBytes / 1024) KB, which is too big for a mod."))
+        }
         let mod: Mod
         do { mod = try JSONDecoder().decode(Mod.self, from: data) } catch {
             return .failure(.unreadable(describe(error)))
@@ -191,10 +230,25 @@ struct Mod: Codable, Equatable, Identifiable {
     }
 }
 
+extension Mod {
+    /// What the mod adds to the look: its own tokens, with the flags that are
+    /// look tokens in disguise (tab text size, the sleek border) folded in.
+    var layer: SpaceLook {
+        var l = look ?? SpaceLook()
+        if let size = flags?.tabTextSize { l.tabTextSize = size }
+        if flags?.sleekBorder == true {
+            l.cornerRadius = l.cornerRadius ?? 12
+            l.webInset = l.webInset ?? 6
+            l.webBorder = l.webBorder ?? 1
+        }
+        return l
+    }
+}
+
 extension SpaceLook {
     /// The look to draw: defaults, then the enabled `mods` in order, then the space's own.
     static func resolve(mods: [Mod], own: SpaceLook?) -> Resolved {
-        resolve(mods.compactMap(\.look) + [own].compactMap { $0 })
+        resolve(mods.map(\.layer) + [own].compactMap { $0 })
     }
 }
 

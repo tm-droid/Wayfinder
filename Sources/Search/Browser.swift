@@ -2294,6 +2294,11 @@ final class Browser: NSObject, ObservableObject {
             }
             .store(in: &bag)
 
+        // Mods turned on, off or reordered change the look and the switches.
+        NotificationCenter.default.publisher(for: ModStore.changed)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
+
         // The spaces are every window's: one renamed, added or taken away in
         // another window is so here too.
         NotificationCenter.default.publisher(for: Spaces.changed)

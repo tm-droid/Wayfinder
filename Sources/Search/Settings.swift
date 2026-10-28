@@ -34,7 +34,7 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, mods, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -47,6 +47,7 @@ struct SettingsPanel: View {
             case .privacy: return "Privacy"
             case .ai: return "AI"
             case .extensions: return "Extensions"
+            case .mods: return "Mods"
             case .keyboard: return "Keyboard & Mouse"
             case .about: return "About"
             }
@@ -62,6 +63,7 @@ struct SettingsPanel: View {
             case .privacy: return "hand.raised"
             case .ai: return "sparkles"
             case .extensions: return "puzzlepiece.extension"
+            case .mods: return "slider.horizontal.3"
             case .keyboard: return "keyboard"
             case .about: return "info.circle"
             }
@@ -79,7 +81,7 @@ struct SettingsPanel: View {
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
             [[.general, .appearance, .tabs, .browsing, .spaces],
-             [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
+             [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .mods, .keyboard],
              [.about]]
         }
     }
@@ -329,6 +331,8 @@ struct SettingsPanel: View {
             }
         case .extensions:
             ExtensionsPage(browser: browser)
+        case .mods:
+            ModsPage(browser: browser)
         case .ai:
             if AI.shipped { AISettings(browser: browser, prefs: prefs) }
         default:

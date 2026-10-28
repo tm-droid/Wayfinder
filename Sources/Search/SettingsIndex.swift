@@ -90,6 +90,8 @@ enum SettingsIndex {
         .init(id: "permissions", page: .privacy, title: "Site permissions", icon: "checkmark.shield"),
         .init(id: "clear", page: .privacy, title: "Clear", icon: "trash"),
 
+        .init(id: "mods", page: .mods, title: "Mods", icon: "slider.horizontal.3"),
+
         .init(id: "mouse", page: .keyboard, title: "Mouse and trackpad", icon: "computermouse"),
 
         .init(id: "updates", page: .about, title: "Updates", icon: "arrow.triangle.2.circlepath"),
@@ -339,6 +341,16 @@ enum SettingsIndex {
               title: "Cookies and sign-ins", detail: "Signs you out of every site", words: ["cookies", "sign out"]),
         .init(id: "clear.cache", group: "clear", icon: "internaldrive",
               title: "Cache", detail: "Only what was fetched to draw pages", words: ["clear cache"]),
+
+        // Mods
+        .init(id: "mods.manage", group: "mods", icon: "slider.horizontal.3",
+              title: "Mods", detail: "Turn small look changes on or off, and put them in order",
+              more: "Each mod sets a few look tokens and switches, such as bigger mute buttons or a compact find bar. A mod cannot run code.",
+              words: ["mods", "zen mods", "theme", "tweaks", "customise", "customize", "tab text size", "mute button", "find bar", "border", "dim tabs"],
+              findOnly: true),
+        .init(id: "mods.install", group: "mods", icon: "square.and.arrow.down",
+              title: "Install a mod from a file", detail: "A JSON file of up to 64 KB; it is checked before anything changes",
+              words: ["mods", "install mod", "import mod", "json"], findOnly: true),
 
         // Keyboard & Mouse
         .init(id: "links.peek", group: "mouse", icon: "eye",

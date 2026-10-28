@@ -430,6 +430,8 @@ struct CardEdge: ViewModifier {
     let on: Bool
     /// The page's corners: the space's look sets them.
     var radius = Metrics.cardRadius
+    /// The edge's width when a look or mod asks for a firmer one (Look: webBorder); 0 leaves the hairline.
+    var border: CGFloat = 0
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -446,7 +448,7 @@ struct CardEdge: ViewModifier {
             }
             .overlay {
                 CardShape(on: on, radius: radius)
-                    .strokeBorder(Color.primary.opacity(on ? CardEdge.edge : 0), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(on ? (border > 0 ? CardEdge.edge * 2 : CardEdge.edge) : 0), lineWidth: max(1, border))
                     .allowsHitTesting(false)
             }
     }

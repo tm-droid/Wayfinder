@@ -1168,10 +1168,11 @@ private struct SideRow: View {
                     // The page is translated (Translate.swift).
                     TranslateSign(tab: tab, colour: colour)
                     TitleAtRest(label: tab.listed ? browser.drift(of: tab) ?? tab.label : tab.label, rest: rest, shown: atRest, hovering: hovering,
-                                size: prefs.sideTitle, colour: colour, roomy: true)
+                                size: browser.tint.tabTextSize(else: prefs.sideTitle), colour: colour, roomy: true)
                 }
                 Spacer(minLength: 0)
             }
+            .opacity(browser.tint.dims(asleep: tab.asleep, live: live))
             .padding(.leading, 10)
             .padding(.trailing, status || peeking ? 0 : 10)
             .frame(height: prefs.sideRow)
@@ -1198,7 +1199,7 @@ private struct SideRow: View {
                     if tab.loading {
                         Ring().transition(.opacity)
                     } else {
-                        Speaker(tab: tab).transition(.opacity)
+                        Speaker(tab: tab, big: browser.tint.flags.biggerMute == true).transition(.opacity)
                     }
                 }
                 .frame(width: 15, height: 15)
@@ -1227,7 +1228,7 @@ private struct SideRow: View {
         }
         .overlay(alignment: .trailing) {
             // A pin row that has wandered: one press back to its page.
-            if hovering, !editing, tab.listed, browser.drift(of: tab) != nil {
+            if hovering, !editing, tab.listed, browser.tint.flags.hidePinnedReset != true, browser.drift(of: tab) != nil {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(Palette.muted)
@@ -1441,13 +1442,15 @@ struct KeepLine: View {
 /// it only while the pointer is on it.
 struct Speaker: View {
     @ObservedObject var tab: Tab
+    /// A mod's bigger mute button (ModFlag.biggerMute).
+    var big = false
 
     @State private var hovering = false
 
     var body: some View {
         Button(action: tab.toggleMute) {
             Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.system(size: 8))
+                .font(.system(size: big ? 11 : 8))
                 .foregroundStyle(Palette.muted)
                 .frame(width: 15, height: 15)
                 .background(Palette.ink.opacity(hovering ? 0.07 : 0), in: Circle())

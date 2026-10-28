@@ -497,7 +497,7 @@ struct ContentView: View {
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
             stage
-                .modifier(CardEdge(on: cards && !browser.prefs.splitView, radius: CGFloat(browser.tint.look.cornerRadius)))
+                .modifier(CardEdge(on: cards && !browser.prefs.splitView, radius: CGFloat(browser.tint.look.cornerRadius), border: CGFloat(browser.tint.look.webBorder)))
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)

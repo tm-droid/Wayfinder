@@ -804,7 +804,8 @@ private struct TabPill: View {
                 // The page is translated (Translate.swift).
                 TranslateSign(tab: tab, colour: colour)
                 TitleAtRest(label: tab.label, rest: rest, shown: atRest, hovering: hovering,
-                            size: 12.5, colour: colour, roomy: false)
+                            size: browser.tint.tabTextSize(else: 12.5), colour: colour, roomy: false)
+                    .opacity(browser.tint.dims(asleep: tab.asleep, live: live))
             }
 
             Spacer(minLength: 2)
@@ -818,7 +819,7 @@ private struct TabPill: View {
             // and clear of its reach.
             HStack(spacing: 0) {
                 if speaker {
-                    Speaker(tab: tab)
+                    Speaker(tab: tab, big: browser.tint.flags.biggerMute == true)
                         .padding(.trailing, hovering ? 8 : 0)
                         .transition(.opacity)
                 }

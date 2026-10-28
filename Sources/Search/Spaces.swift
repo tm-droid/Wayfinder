@@ -455,7 +455,7 @@ extension Browser {
     }
 
     /// The look the window draws now: the space on screen, under the enabled mods.
-    var tint: Tint { Tint.of(spaces, active: spaceID, preview: lookPreview) }
+    var tint: Tint { Tint.of(spaces, active: spaceID, mods: Mods.enabled(profile: profileID), preview: lookPreview) }
 
     /// Saved, and followed by every window.
     func setSpaceLook(_ id: UUID, to look: SpaceLook?) {

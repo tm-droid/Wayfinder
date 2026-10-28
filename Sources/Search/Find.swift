@@ -10,9 +10,11 @@ struct FindBar: View {
     @FocusState private var focused: Bool
 
     private var narrow: Bool { availableWidth.map { $0 < 290 } ?? false }
+    /// A mod's compact find bar (ModFlag.compactFindBar): a shorter field, tighter padding.
+    private var compact: Bool { browser.tint.flags.compactFindBar == true }
     private var fieldWidth: CGFloat {
-        guard let availableWidth else { return 150 }
-        return max(40, min(160, availableWidth - (narrow ? 80 : 130)))
+        guard let availableWidth else { return compact ? 110 : 150 }
+        return max(40, min(compact ? 120 : 160, availableWidth - (narrow ? 80 : 130)))
     }
 
     var body: some View {
@@ -30,7 +32,7 @@ struct FindBar: View {
                     .focused($focused)
                     .onSubmit { browser.look(forward: true) }
             }
-            .font(.system(size: 12.5))
+            .font(.system(size: compact ? 11.5 : 12.5))
             .frame(width: fieldWidth)
 
             // "3 of 17", as the page counted it.
@@ -79,9 +81,9 @@ struct FindBar: View {
                 browser.closeFind()
             }
         }
-        .padding(.leading, narrow ? 10 : 16)
-        .padding(.trailing, narrow ? 6 : 8)
-        .padding(.vertical, 8)
+        .padding(.leading, narrow || compact ? 10 : 16)
+        .padding(.trailing, narrow || compact ? 6 : 8)
+        .padding(.vertical, compact ? 4 : 8)
         .background(Palette.ground, in: Capsule())
         .overlay(
             Capsule().strokeBorder(

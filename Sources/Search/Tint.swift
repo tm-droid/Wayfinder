@@ -4,23 +4,30 @@ import SwiftUI
 // (SpaceLook.swift) in the environment, a gradient-and-grain ground for the
 // sidebar and the window, and the pure maths the Look editor uses.
 
-/// Where the enabled mods come from. W4 fills this with the user's enabled
-/// mods in their order; until then no mod changes a look.
-enum Mods {
-    static var enabled: [Mod] { [] }
-}
-
 struct Tint: Equatable {
     var look: SpaceLook.Resolved
+    /// The enabled mods' switches, later mods winning (see Mods in ModStore.swift).
+    var flags = ModFlags()
 
     static let none = Tint(look: SpaceLook.defaults)
 
-    /// The look of the space with `id` among `spaces`, under `mods`. An editor's
+    /// The look of the space with `id` among `spaces`, under `mods` (the enabled ones, in order: `Mods.enabled`). An editor's
     /// unsaved `preview` of that space stands in for its saved look.
-    static func of(_ spaces: [Space], active id: UUID, mods: [Mod] = Mods.enabled, preview: (id: UUID, look: SpaceLook?)? = nil) -> Tint {
+    static func of(_ spaces: [Space], active id: UUID, mods: [Mod] = [], preview: (id: UUID, look: SpaceLook?)? = nil) -> Tint {
         let space = spaces.first { $0.id == id } ?? spaces.first
         let own = preview.flatMap { $0.id == space?.id ? $0 : nil }.map(\.look) ?? space?.look
-        return Tint(look: SpaceLook.resolve(mods: mods, own: own))
+        return Tint(look: SpaceLook.resolve(mods: mods, own: own), flags: ModFlags.merge(mods))
+    }
+
+    /// The size tab titles are set in: a mod's or the space's choice, else `normal`.
+    func tabTextSize(else normal: CGFloat) -> CGFloat {
+        look.tabTextSize == SpaceLook.defaults.tabTextSize ? normal : CGFloat(look.tabTextSize)
+    }
+
+    /// How much of a row shows: a tab that is asleep and not the one on screen fades as the mods say.
+    func dims(asleep: Bool, live: Bool) -> Double {
+        guard asleep, !live, let fade = flags.dimUnloadedTabs else { return 1 }
+        return 1 - min(max(fade, ModFlags.dimRange.lowerBound), ModFlags.dimRange.upperBound)
     }
 
     var hasGround: Bool { !look.gradient.isEmpty }
