@@ -481,7 +481,7 @@ struct ContentView: View {
             // With the tabs down the side, the ground the page's card and the
             // column sit on (see CardEdge).
             (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
-            if cards, fullscreenTab == nil { TintGround().environment(\.tint, browser.tint) }
+            if cards, fullscreenTab == nil { TintGround(space: browser.spaceID).environment(\.tint, browser.tint) }
 
             // One stage, always. It starts beside the column and under the
             // strip, not behind them — a page sliding beneath floating chrome
@@ -515,7 +515,7 @@ struct ContentView: View {
             // height, so the traffic lights sit in its own corner rather than
             // over the page.
             if sidebar {
-                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards)
+                SideBar(browser: browser, prefs: browser.prefs, onFrame: cards, seamless: cards)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .transition(.move(edge: sideOnRight ? .trailing : .leading))
             }

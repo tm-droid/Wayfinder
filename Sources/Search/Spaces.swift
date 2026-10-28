@@ -455,19 +455,19 @@ extension Browser {
     }
 
     /// The look the window draws now: the space on screen, under the enabled mods.
-    var tint: Tint { Tint.of(spaces, active: spaceID) }
+    var tint: Tint { Tint.of(spaces, active: spaceID, preview: lookPreview) }
 
     /// Saved, and followed by every window.
     func setSpaceLook(_ id: UUID, to look: SpaceLook?) {
         guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[at].look = look?.isEmpty == true ? nil : look
+        lookPreview = nil
         Spaces.write(spaces, profile: profileID)
     }
 
     /// Shown in this window only, for the editor's live preview; not saved.
     func previewSpaceLook(_ id: UUID, _ look: SpaceLook?) {
-        guard let at = spaces.firstIndex(where: { $0.id == id }) else { return }
-        spaces[at].look = look
+        lookPreview = (id, look)
     }
 
     func setSpaceDownloads(_ id: UUID, to folder: URL?) {

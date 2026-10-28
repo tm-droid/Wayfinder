@@ -49,6 +49,26 @@ final class TintTests: XCTestCase {
         }
     }
 
+    @MainActor func testPreviewIsDrawnButNeverInSavedSpaces() {
+        let browser = Browser(record: WindowRecord())
+        let id = browser.spaceID
+        let before = browser.spaces
+        browser.previewSpaceLook(id, SpaceLook(gradient: ["#112233", "#445566"]))
+        XCTAssertTrue(browser.tint.hasGround)
+        XCTAssertEqual(browser.spaces, before)
+        // Another write to the list, as a rename is, carries nothing of the preview.
+        var renamed = browser.spaces
+        renamed[0].name = "Renamed"
+        XCTAssertNil(renamed[0].look)
+        browser.lookPreview = nil
+        XCTAssertFalse(browser.tint.hasGround)
+        XCTAssertFalse(Tint.of(before, active: id, preview: (UUID(), SpaceLook(grain: 1))).look.grain > 0)
+    }
+
+    func testPresetsLeaveAutoUnset() {
+        XCTAssertTrue(LookPreset.all.allSatisfy { $0.look.scheme != .auto })
+    }
+
     func testResetGoesBackToDefaults() {
         var look = SpaceLook(grain: 0.8, transparency: 0.9)
         XCTAssertEqual(SpaceLook.resolve([look]).grain, 0.8)

@@ -15,9 +15,11 @@ struct Tint: Equatable {
 
     static let none = Tint(look: SpaceLook.defaults)
 
-    /// The look of the space with `id` among `spaces`, under `mods`.
-    static func of(_ spaces: [Space], active id: UUID, mods: [Mod] = Mods.enabled) -> Tint {
-        let own = (spaces.first { $0.id == id } ?? spaces.first)?.look
+    /// The look of the space with `id` among `spaces`, under `mods`. An editor's
+    /// unsaved `preview` of that space stands in for its saved look.
+    static func of(_ spaces: [Space], active id: UUID, mods: [Mod] = Mods.enabled, preview: (id: UUID, look: SpaceLook?)? = nil) -> Tint {
+        let space = spaces.first { $0.id == id } ?? spaces.first
+        let own = preview.flatMap { $0.id == space?.id ? $0 : nil }.map(\.look) ?? space?.look
         return Tint(look: SpaceLook.resolve(mods: mods, own: own))
     }
 
@@ -70,6 +72,9 @@ extension EnvironmentValues {
 
 /// The gradient and grain over the base colour, taking no clicks.
 struct TintGround: View {
+    /// The space on screen: a change of look eases only when it is this that
+    /// changed, never while the editor drags a colour.
+    let space: UUID
     @Environment(\.tint) private var tint
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -85,7 +90,7 @@ struct TintGround: View {
                 }
             }
         }
-        .animation(Tint.animation, value: tint)
+        .animation(Tint.animation, value: space)
         .allowsHitTesting(false)
     }
 }
@@ -177,7 +182,7 @@ struct LookPreset: Identifiable {
     private static func make(_ name: String, _ stops: [String], _ angle: Double, accent: String, grain: Double = 0.25,
                              transparency: Double = 0.35, scheme: LookScheme? = nil) -> LookPreset {
         LookPreset(name: name, look: SpaceLook(gradient: stops, angle: angle, grain: grain, transparency: transparency,
-                                               scheme: scheme, accent: accent))
+                                               scheme: scheme == .auto ? nil : scheme, accent: accent))
     }
 
     static let all: [LookPreset] = [

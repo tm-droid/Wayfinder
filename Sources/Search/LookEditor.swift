@@ -17,13 +17,11 @@ struct LookEditor: View {
     @State private var more = false
     /// Where the dragged dot began, so ⌥ can move it a tenth as far.
     @State private var anchor: CGPoint?
-    private let original: SpaceLook?
 
     init(browser: Browser, close: @escaping () -> Void) {
         self.browser = browser
         spaceID = browser.spaceID
         self.close = close
-        original = browser.space.look
         _draft = State(initialValue: browser.space.look ?? SpaceLook())
     }
 
@@ -83,7 +81,7 @@ struct LookEditor: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { browser.previewSpaceLook(spaceID, original); close() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
                 Button("Done") { browser.setSpaceLook(spaceID, to: draft); close() }.keyboardShortcut(.defaultAction)
             }
         }
@@ -91,6 +89,9 @@ struct LookEditor: View {
         .frame(width: 300)
         .popoverGround()
         .onChange(of: draft) { _, look in browser.previewSpaceLook(spaceID, look.isEmpty ? nil : look) }
+        // Gone by any road (Cancel, a click outside, another space) puts the saved look back.
+        .onDisappear { browser.lookPreview = nil }
+        .onChange(of: browser.spaceID) { _, _ in close() }
     }
 
     // MARK: Dots
