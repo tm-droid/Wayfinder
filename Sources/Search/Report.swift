@@ -297,8 +297,16 @@ final class ReportRelay: NSObject, WKScriptMessageHandler {
     })();
     """
 
+    /// Runs in every frame: a tracker loaded inside an iframe is the page's
+    /// tracker too. A sub-frame cannot be told apart by its message, which is
+    /// attributed to the tab's top-level address below, and `seen` is shared
+    /// by all frames, so a tracker both the page and an iframe load counts once.
+    static var userScript: WKUserScript {
+        WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Web.world)
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, message.world == Web.world else { return }
+        guard message.world == Web.world else { return }
         let hosts = ReportPayload.hosts(from: message.body)
         MainActor.assumeIsolated {
             guard let tab, !tab.shy, let url = tab.pageAddress,

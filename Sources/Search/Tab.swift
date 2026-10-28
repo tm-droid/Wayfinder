@@ -1102,9 +1102,7 @@ final class Tab: ObservableObject, Identifiable {
         )
         // The privacy report's lookout (see Report.swift); never in a private tab.
         if !shy {
-            controller.addUserScript(
-                WKUserScript(source: ReportRelay.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
-            )
+            controller.addUserScript(ReportRelay.userScript)
         }
         // Every frame, in the page's own world and ahead of its scripts: a
         // live player's speed nudges go through it (see LiveRate.swift).

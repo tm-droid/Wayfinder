@@ -60,7 +60,9 @@ final class Shield: ObservableObject {
 
     /// Where EasyList and EasyPrivacy ship: the app's Resources, or the
     /// source tree when run from `swift test`.
-    static let blocklists: URL? = {
+    /// `nonisolated`: an immutable, Sendable URL fixed at first use, so it is
+    /// safe from any actor and usable in a default argument.
+    nonisolated static let blocklists: URL? = {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Blocklists")
         return [Bundle.main.resourceURL?.appendingPathComponent("Blocklists"), source]
@@ -122,13 +124,13 @@ final class Shield: ObservableObject {
 
     func compile() {
         guard lists.isEmpty else { return }
-        Task { await build() }
+        Task { await build(store: .default()) }
     }
 
     /// Compiles each list, or takes it from the store: the store's name for
     /// a list carries a hash of its text, so a launch recompiles only what
     /// changed, and what no longer matches is deleted.
-    func build(store: WKContentRuleListStore? = .default(), blocklists: URL? = Shield.blocklists) async {
+    func build(store: WKContentRuleListStore?, blocklists: URL? = Shield.blocklists) async {
         trouble = nil
         reused = 0
         guard let store else {
