@@ -12,6 +12,8 @@ final class Links: NSObject, NSApplicationDelegate {
     private static var deliver: ((URL) -> Void)?
     /// Addresses that arrived first.
     private static var waiting: [URL] = []
+    /// The space a waiting link's rule chose (see LinkRouter).
+    private static var routed: [URL: UUID] = [:]
     /// The window in front's, or the first one's, once there is one.
     @MainActor static var window: NSWindow? { Browsers.front?.window ?? Browsers.primary?.window }
     /// Whether the window has been asked for on a link's behalf (summon).
@@ -228,6 +230,7 @@ final class Links: NSObject, NSApplicationDelegate {
             // The window in front's browser, or a window brought back for it:
             // the link lands where you are, not in the first window.
             let browser = Browsers.ensureWindow()
+            if let id = routed.removeValue(forKey: url) { browser.switchSpace(to: id) }
             browser.arrive(url)
             // Put away in the Dock, it stayed there: bringing a window to the
             // front doesn't take it out (#95).
@@ -239,6 +242,7 @@ final class Links: NSObject, NSApplicationDelegate {
         waiting = []
         guard let first = early.first else { return }
         onceShown { [weak browser] in
+            if let id = routed.removeValue(forKey: first) { browser?.switchSpace(to: id) }
             browser?.arrive(first)
             comeForward()
             for (n, url) in early.dropFirst().enumerated() {
@@ -289,12 +293,26 @@ final class Links: NSObject, NSApplicationDelegate {
     static func arrived(_ url: URL) { take(url) }
 
     private static func take(_ url: URL) {
-        if MainActor.assumeIsolated({ little(url) }) { return }
+        let way = MainActor.assumeIsolated { route(url) }
+        if case .space(let id)? = way { routed[url] = id }
+        if MainActor.assumeIsolated({ little(url, rule: way) }) { return }
         if let deliver {
             deliver(url)
         } else {
             waiting.append(url)
             DispatchQueue.main.async { summon() }
+        }
+    }
+
+    /// What the user's rules (Settings › Spaces & Pins › Link Routing) say
+    /// of a link from another app, read for the window it would land in.
+    @MainActor
+    private static func route(_ url: URL) -> LinkDestination? {
+        let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }
+            ?? Browsers.primary ?? SceneSlot.shared.browser
+        let rules = LinkRules.read(profile: browser.profileID)
+        return LinkRouter.route(url, rules: rules) { id in
+            browser.prefs.usesSpaces && browser.spaces.contains { $0.id == id }
         }
     }
 
@@ -305,8 +323,10 @@ final class Links: NSObject, NSApplicationDelegate {
     /// window back first, so the browser came up behind the small window
     /// every time. Open in Search is what brings it now.
     @MainActor
-    private static func little(_ url: URL) -> Bool {
-        guard Shared.prefs.littleLinks else { return false }
+    private static func little(_ url: URL, rule: LinkDestination?) -> Bool {
+        // A rule decides: the small window for its Little target, the
+        // browser's for any other. Without one, the setting does.
+        guard rule == .little || (rule == nil && Shared.prefs.littleLinks) else { return false }
         if !launched { Browsers.keepAway() }
         // The space and sign-ins of the window in front, on screen or not.
         let browser = Browsers.front.flatMap { !$0.isPopup ? $0 : nil }

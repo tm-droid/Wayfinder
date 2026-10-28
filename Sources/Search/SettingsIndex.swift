@@ -272,6 +272,7 @@ enum SettingsIndex {
               title: "Profiles", detail: "Spaces with their own sign-ins, history and bookmarks",
               more: "In windows of their own. Extensions, passwords and settings are shared.",
               words: ["profile", "accounts", "work", "personal"]),
+        .init(id: "note.linkrouting", group: "spaces", icon: "arrow.triangle.branch", title: "Link Routing", detail: "Always there: send links from other apps to a Space or the Little window, by site", words: ["air traffic control", "route", "default browser", "little"], kind: .note, findOnly: true),
         .init(id: "pins.keep", group: "pins", icon: "pin.circle",
               title: "Pins keep their site", detail: "Links elsewhere open over the pin, and ⌘W takes it back home",
               more: "As in Arc and Safari: a link from a pin to another site opens in a peek over it, and a pin closed with ⌘W, or left open when Wayfinder quits, comes back at the page it was pinned at.",
