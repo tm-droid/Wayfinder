@@ -67,6 +67,27 @@ final class ReportTests: XCTestCase {
         XCTAssertEqual(s.sites.first?.name, "page.com")
     }
 
+    func testScriptRunsInSubFrames() {
+        XCTAssertFalse(ReportRelay.userScript.isForMainFrameOnly)
+    }
+
+    func testSubFrameTrackersCountOnceForTheTopLevelSite() {
+        let report = PrivacyReport(file: nil)
+        var seen = Set<String>()
+        let trackers: Set<String> = ["adtech.com", "pixel.io"]
+        let now = Date()
+        // Main frame, then an iframe on another origin that loads one the
+        // page already loaded and one of its own; the page is the top-level site.
+        report.note(hosts: ["a.adtech.com"], page: "www.page.com", shy: false, blocking: true,
+                    seen: &seen, trackers: trackers, now: now)
+        let fresh = report.note(hosts: ["b.adtech.com", "pixel.io", "frame.other.org"], page: "www.page.com",
+                                shy: false, blocking: true, seen: &seen, trackers: trackers, now: now)
+        XCTAssertEqual(fresh, ["pixel.io"])
+        let s = report.ledger.summary(days: 7, now: now)
+        XCTAssertEqual(s.prevented, 2)
+        XCTAssertEqual(s.sites.map(\.name), ["page.com"])
+    }
+
     func testFirstPartyIsNotATracker() {
         let report = PrivacyReport(file: nil)
         var seen = Set<String>()
